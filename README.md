@@ -13,6 +13,9 @@ PunchPal solves the problem of expensive personal coaching by using AI to genera
 - **Progress Tracking**: Automatically tracks completed workouts and adjusts future recommendations
 - **Smart Timer**: 3-minute rounds with automatic combo changes every 60 seconds
 - **Onboarding**: Simple experience level selection (Beginner, Intermediate, Advanced)
+- **Cloud Sync**: Supabase integration for cloud-based user stats, workout history, and combo progress tracking
+- **Adaptive Difficulty**: AI learns from your performance and automatically recommends level progression
+- **Combo Mastery**: Tracks which combos you've learned and recommends practice focus areas
 
 ## App Structure
 
@@ -56,6 +59,17 @@ PunchPal solves the problem of expensive personal coaching by using AI to genera
   - Generates personalized workouts using Grok 3 Fast AI
   - Takes boxing level and workout history as input
   - Returns structured workout with combos and descriptions
+  - Fallback workout library if API fails
+
+- **Database Service** (`src/api/database-service.ts`)
+  - Handles all Supabase operations for user stats, workout sessions, and combo progress
+  - Provides methods for tracking performance and evaluating level progression
+  - Optional cloud sync (gracefully disabled if Supabase credentials missing)
+
+- **User Service** (`src/api/user-service.ts`)
+  - Initializes users with anonymous Supabase authentication
+  - Syncs local user stats to cloud database
+  - Evaluates recommended level progression based on performance
 
 ## Tech Stack
 
@@ -63,9 +77,11 @@ PunchPal solves the problem of expensive personal coaching by using AI to genera
 - **Expo**: SDK 53
 - **Navigation**: React Navigation (Native Stack)
 - **State Management**: Zustand with AsyncStorage persistence
+- **Database**: Supabase (PostgreSQL) for cloud sync and analytics
 - **Styling**: NativeWind (TailwindCSS for React Native)
 - **Animations**: react-native-reanimated v3
 - **AI**: Grok 3 Fast (via OpenAI-compatible API)
+- **Authentication**: Supabase Anonymous Auth
 - **Package Manager**: Bun
 
 ## Theme Colors
@@ -103,7 +119,11 @@ The app is running on port 8081 with Expo dev server. Changes are automatically 
 ```
 src/
 ├── api/
-│   └── workout-generator.ts    # AI workout generation
+│   ├── workout-generator.ts    # AI workout generation with fallback library
+│   ├── database-service.ts     # Supabase database operations
+│   └── user-service.ts         # User authentication and sync
+├── lib/
+│   └── supabaseClient.ts       # Supabase client initialization
 ├── components/
 │   └── WorkoutCard.tsx         # Main workout display card
 ├── navigation/
@@ -114,15 +134,58 @@ src/
 │   ├── HomeScreen.tsx          # Main screen with workout card
 │   └── TimerScreen.tsx         # Workout timer interface
 ├── state/
-│   └── userStore.ts            # Zustand state management
+│   └── userStore.ts            # Zustand state management with cloud sync
 └── types/
     └── workout.ts              # TypeScript type definitions
 ```
 
 ## Environment Variables
 
-The app uses Grok AI API key from Vibecode environment variables:
-- `EXPO_PUBLIC_VIBECODE_GROK_API_KEY`
+The app uses the following environment variables (configure via Vibecode ENV tab):
+- `EXPO_PUBLIC_VIBECODE_GROK_API_KEY` - Grok AI API key for workout generation
+- `EXPO_PUBLIC_SUPABASE_URL` - Supabase project URL (optional, for cloud features)
+- `EXPO_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key (optional, for cloud features)
+
+## Database Schema (Supabase)
+
+### user_stats table
+Tracks overall user progress and statistics:
+- `userId` (string, primary key)
+- `totalWorkouts` (number)
+- `totalMinutes` (number)
+- `currentLevel` (beginner | intermediate | advanced)
+- `nextLevelProgress` (0-100)
+- `combosLearned` (number)
+- `currentStreak` (number)
+- `longestStreak` (number)
+- `avgAccuracy` (0-100)
+- `lastWorkoutDate` (timestamp)
+
+### workout_sessions table
+Records each completed workout:
+- `id` (uuid, primary key)
+- `userId` (string, foreign key)
+- `workoutName` (string)
+- `difficulty` (beginner | intermediate | advanced)
+- `duration` (number)
+- `rounds` (number)
+- `completedAt` (timestamp)
+- `durationMinutes` (number)
+- `combosAttempted` (number)
+- `combosCompleted` (number)
+- `accuracy` (0-100)
+- `notes` (string, optional)
+
+### combo_progress table
+Tracks user's progress on specific combos:
+- `id` (uuid, primary key)
+- `userId` (string, foreign key)
+- `comboNotation` (string)
+- `comboName` (string)
+- `timesAttempted` (number)
+- `timesCompleted` (number)
+- `bestAccuracy` (0-100)
+- `lastAttemptDate` (timestamp)
 
 ## Future Enhancements
 
@@ -132,3 +195,82 @@ The app uses Grok AI API key from Vibecode environment variables:
 - Video demonstrations of combos
 - Voice guidance during workouts
 - Payment integration for premium features
+
+## Supabase Setup Instructions
+
+To enable cloud features (optional), follow these steps:
+
+1. **Create a Supabase Project**
+   - Go to https://supabase.com and create a new project
+   - Get your project URL and anon key from the project settings
+
+2. **Configure Environment Variables**
+   - Use the Vibecode ENV tab to add:
+     - `EXPO_PUBLIC_SUPABASE_URL` = your Supabase project URL
+     - `EXPO_PUBLIC_SUPABASE_ANON_KEY` = your Supabase anon key
+
+3. **Create Database Tables**
+   - In Supabase SQL editor, run the following SQL to create the required tables:
+
+```sql
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- user_stats table
+CREATE TABLE user_stats (
+  userId TEXT PRIMARY KEY,
+  totalWorkouts INTEGER DEFAULT 0,
+  totalMinutes INTEGER DEFAULT 0,
+  currentLevel TEXT DEFAULT 'beginner',
+  nextLevelProgress FLOAT DEFAULT 0,
+  combosLearned INTEGER DEFAULT 0,
+  currentStreak INTEGER DEFAULT 0,
+  longestStreak INTEGER DEFAULT 0,
+  avgAccuracy FLOAT DEFAULT 0,
+  lastWorkoutDate TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- workout_sessions table
+CREATE TABLE workout_sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  userId TEXT REFERENCES user_stats(userId) ON DELETE CASCADE,
+  workoutName TEXT NOT NULL,
+  difficulty TEXT NOT NULL,
+  duration INTEGER NOT NULL,
+  rounds INTEGER NOT NULL,
+  completedAt TIMESTAMP WITH TIME ZONE NOT NULL,
+  durationMinutes INTEGER NOT NULL,
+  combosAttempted INTEGER DEFAULT 0,
+  combosCompleted INTEGER DEFAULT 0,
+  accuracy FLOAT DEFAULT 0,
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- combo_progress table
+CREATE TABLE combo_progress (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  userId TEXT REFERENCES user_stats(userId) ON DELETE CASCADE,
+  comboNotation TEXT NOT NULL,
+  comboName TEXT NOT NULL,
+  timesAttempted INTEGER DEFAULT 0,
+  timesCompleted INTEGER DEFAULT 0,
+  bestAccuracy FLOAT DEFAULT 0,
+  lastAttemptDate TIMESTAMP WITH TIME ZONE NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(userId, comboNotation)
+);
+
+-- Create indexes for better query performance
+CREATE INDEX idx_workout_sessions_userId ON workout_sessions(userId);
+CREATE INDEX idx_combo_progress_userId ON combo_progress(userId);
+```
+
+4. **Enable Anonymous Auth** (already enabled by default in new Supabase projects)
+
+5. **Test the Integration**
+   - The app will automatically create an anonymous user on first launch
+   - Check Supabase tables to see data being synced

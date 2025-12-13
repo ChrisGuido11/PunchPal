@@ -4,6 +4,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BoxingLevel, WorkoutPlan, WorkoutHistory, SavedWorkout } from "../types/workout";
 
 interface UserState {
+  userId: string | null;
   hasCompletedOnboarding: boolean;
   boxingLevel: BoxingLevel | null;
   currentWorkout: WorkoutPlan | null;
@@ -15,6 +16,7 @@ interface UserState {
   longestStreak: number;
   unlockedAchievements: string[];
 
+  setUserId: (id: string | null) => void;
   setHasCompletedOnboarding: (completed: boolean) => void;
   setBoxingLevel: (level: BoxingLevel) => void;
   setCurrentWorkout: (workout: WorkoutPlan | null) => void;
@@ -78,6 +80,7 @@ const calculateStreak = (workoutHistory: WorkoutHistory[]): { currentStreak: num
 export const useUserStore = create<UserState>()(
   persist(
     (set, get) => ({
+      userId: null,
       hasCompletedOnboarding: false,
       boxingLevel: null,
       currentWorkout: null,
@@ -88,6 +91,8 @@ export const useUserStore = create<UserState>()(
       currentStreak: 0,
       longestStreak: 0,
       unlockedAchievements: [],
+
+      setUserId: (id) => set({ userId: id }),
 
       setHasCompletedOnboarding: (completed) =>
         set({ hasCompletedOnboarding: completed }),

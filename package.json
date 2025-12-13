@@ -33,6 +33,7 @@
     "@react-navigation/stack": "^7.1.1",
     "@shopify/flash-list": "1.7.6",
     "@shopify/react-native-skia": "v2.0.3",
+    "@supabase/supabase-js": "^2.87.1",
     "clsx": "^2.1.1",
     "date-fns": "^4.1.0",
     "expo": "53.0.9",
@@ -132,7 +133,7 @@
     "typescript": "~5.8.3"
   },
   "private": true,
-  "overrides": { 
+  "overrides": {
     "react-native-css-interop": "0.1.22",
     "react-native-reanimated": "3.17.4"
   },
