@@ -129,9 +129,6 @@ export default function HomeScreen({ navigation }: Props) {
                     <Text className="text-white text-center text-lg font-bold">
                       💎 Get Fresh Workout
                     </Text>
-                    <Text className="text-gray-200 text-center text-xs mt-1">
-                      Premium feature • 1 per day
-                    </Text>
                   </LinearGradient>
                 </Pressable>
               </View>
