@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
-import { View, Text, Pressable, ScrollView } from "react-native";
+import { View, Text, Pressable, ScrollView, Linking } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -93,6 +93,25 @@ function TimerScreen({ navigation }: Props) {
     navigation.goBack();
   };
 
+  const watchLesson = async () => {
+    if (!combo) return;
+    
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    
+    // Create YouTube search query based on combo name and notation
+    const query = `boxing ${combo.name} tutorial ${combo.notation}`;
+    const youtubeSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+    
+    try {
+      const canOpen = await Linking.canOpenURL(youtubeSearchUrl);
+      if (canOpen) {
+        await Linking.openURL(youtubeSearchUrl);
+      }
+    } catch (error) {
+      console.error("Error opening YouTube:", error);
+    }
+  };
+
   if (!currentWorkout || combos.length === 0) {
     return (
       <LinearGradient colors={["#0F0F0F", "#1A1A1A"]} style={{ flex: 1 }}>
@@ -148,9 +167,20 @@ function TimerScreen({ navigation }: Props) {
             <Text className="text-4xl font-bold text-boxing-gold mb-4">
               {combo?.notation ?? "---"}
             </Text>
-            <Text className="text-base text-gray-300">
+            <Text className="text-base text-gray-300 mb-4">
               {combo?.description ?? ""}
             </Text>
+            
+            <Pressable 
+              onPress={watchLesson}
+              className="active:opacity-70 mt-2"
+            >
+              <View className="bg-boxing-gold/10 border border-boxing-gold rounded-xl py-3 px-4 flex-row items-center justify-center">
+                <Text className="text-boxing-gold text-base font-bold">
+                  📺 Watch Lesson on YouTube
+                </Text>
+              </View>
+            </Pressable>
           </View>
 
           <View className="space-y-4">
