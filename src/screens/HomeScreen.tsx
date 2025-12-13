@@ -1,15 +1,7 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, ScrollView, Alert } from "react-native";
+import { View, Text, ScrollView, ActivityIndicator } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withRepeat,
-  withSequence,
-  withTiming,
-  Easing,
-} from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUserStore } from "../state/userStore";
 import { generateWorkout } from "../api/workout-generator";
@@ -33,51 +25,6 @@ export default function HomeScreen({ navigation }: Props) {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const gloveRotation = useSharedValue(0);
-  const gloveScale = useSharedValue(1);
-  const pulseOpacity = useSharedValue(0.5);
-
-  const gloveAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { rotate: `${gloveRotation.value}deg` },
-        { scale: gloveScale.value },
-      ],
-    };
-  });
-
-  const pulseAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      opacity: pulseOpacity.value,
-    };
-  });
-
-  useEffect(() => {
-    if (isGenerating) {
-      gloveRotation.value = withRepeat(
-        withTiming(360, { duration: 2000, easing: Easing.linear }),
-        -1,
-        false
-      );
-      gloveScale.value = withRepeat(
-        withSequence(
-          withTiming(1.1, { duration: 800 }),
-          withTiming(1, { duration: 800 })
-        ),
-        -1,
-        true
-      );
-      pulseOpacity.value = withRepeat(
-        withSequence(
-          withTiming(0.8, { duration: 1000 }),
-          withTiming(0.3, { duration: 1000 })
-        ),
-        -1,
-        true
-      );
-    }
-  }, [isGenerating]);
 
   useEffect(() => {
     if (!currentWorkout && boxingLevel) {
@@ -131,24 +78,9 @@ export default function HomeScreen({ navigation }: Props) {
 
         {isGenerating && (
           <View className="items-center justify-center py-20">
-            <View className="relative items-center justify-center">
-              <Animated.View style={pulseAnimatedStyle}>
-                <LinearGradient
-                  colors={["#F59E0B", "#DC2626"]}
-                  style={{
-                    width: 160,
-                    height: 160,
-                    borderRadius: 80,
-                    position: "absolute",
-                  }}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                />
-              </Animated.View>
-
-              <Animated.View style={gloveAnimatedStyle}>
-                <Text className="text-8xl">🥊</Text>
-              </Animated.View>
+            <View className="items-center justify-center">
+              <Text className="text-8xl mb-4">🥊</Text>
+              <ActivityIndicator size="large" color="#F59E0B" />
             </View>
 
             <Text className="text-2xl font-bold text-white mt-8 mb-2">

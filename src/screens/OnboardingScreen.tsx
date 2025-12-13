@@ -2,12 +2,6 @@ import React, { useState } from "react";
 import { View, Text, Pressable, ScrollView } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withSequence,
-} from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { BoxingLevel } from "../types/workout";
 import { useUserStore } from "../state/userStore";
@@ -45,23 +39,10 @@ export default function OnboardingScreen({ navigation }: Props) {
     (s) => s.setHasCompletedOnboarding
   );
 
-  const buttonScale = useSharedValue(1);
-
-  const buttonAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: buttonScale.value }],
-    };
-  });
-
   const handleContinue = () => {
     if (!selectedLevel) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    buttonScale.value = withSequence(
-      withSpring(0.95, { damping: 10 }),
-      withSpring(1)
-    );
-
     setBoxingLevel(selectedLevel);
     setHasCompletedOnboarding(true);
     navigation.replace("Home");
@@ -109,7 +90,7 @@ export default function OnboardingScreen({ navigation }: Props) {
                     {level.title}
                   </Text>
                   {selectedLevel === level.value && (
-                    <Text className="text-2xl">✓</Text>
+                    <Text className="text-2xl text-boxing-gold">✓</Text>
                   )}
                 </View>
                 <Text className="text-base text-gray-400">
@@ -120,32 +101,30 @@ export default function OnboardingScreen({ navigation }: Props) {
           ))}
         </View>
 
-        <Animated.View style={buttonAnimatedStyle}>
-          <Pressable
-            onPress={handleContinue}
-            disabled={!selectedLevel}
-            className="active:opacity-90"
+        <Pressable
+          onPress={handleContinue}
+          disabled={!selectedLevel}
+          className="active:opacity-80"
+        >
+          <LinearGradient
+            colors={
+              selectedLevel
+                ? ["#DC2626", "#B91C1C"]
+                : ["#374151", "#1F2937"]
+            }
+            style={{
+              paddingVertical: 18,
+              paddingHorizontal: 32,
+              borderRadius: 16,
+            }}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
           >
-            <LinearGradient
-              colors={
-                selectedLevel
-                  ? ["#DC2626", "#B91C1C"]
-                  : ["#374151", "#1F2937"]
-              }
-              style={{
-                paddingVertical: 18,
-                paddingHorizontal: 32,
-                borderRadius: 16,
-              }}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-            >
-              <Text className="text-white text-xl font-bold text-center">
-                Continue
-              </Text>
-            </LinearGradient>
-          </Pressable>
-        </Animated.View>
+            <Text className="text-white text-xl font-bold text-center">
+              Continue
+            </Text>
+          </LinearGradient>
+        </Pressable>
       </ScrollView>
     </LinearGradient>
   );

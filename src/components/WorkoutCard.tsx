@@ -1,15 +1,6 @@
-import React, { useEffect } from "react";
+import React from "react";
 import { View, Text, Pressable } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withSpring,
-  withSequence,
-  withDelay,
-  withTiming,
-  Easing,
-} from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { WorkoutPlan } from "../types/workout";
 
@@ -22,48 +13,8 @@ export default function WorkoutCard({
   workout,
   onStartTraining,
 }: WorkoutCardProps) {
-  const cardScale = useSharedValue(0.8);
-  const cardOpacity = useSharedValue(0);
-  const glowOpacity = useSharedValue(0);
-  const buttonScale = useSharedValue(1);
-
-  const cardAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: cardScale.value }],
-      opacity: cardOpacity.value,
-    };
-  });
-
-  const glowAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      opacity: glowOpacity.value,
-    };
-  });
-
-  const buttonAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: buttonScale.value }],
-    };
-  });
-
-  useEffect(() => {
-    cardScale.value = withSpring(1, { damping: 12 });
-    cardOpacity.value = withSpring(1);
-
-    glowOpacity.value = withSequence(
-      withDelay(300, withTiming(0.8, { duration: 400 })),
-      withTiming(0.4, { duration: 600 })
-    );
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, [workout]);
-
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    buttonScale.value = withSequence(
-      withSpring(0.92, { damping: 10 }),
-      withSpring(1)
-    );
     onStartTraining();
   };
 
@@ -74,20 +25,18 @@ export default function WorkoutCard({
   }[workout.difficulty];
 
   return (
-    <Animated.View style={cardAnimatedStyle} className="mx-6">
+    <View className="mx-6">
       <View className="relative">
-        <Animated.View
-          style={[
-            glowAnimatedStyle,
-            {
-              position: "absolute",
-              top: -4,
-              left: -4,
-              right: -4,
-              bottom: -4,
-              borderRadius: 24,
-            },
-          ]}
+        <View
+          style={{
+            position: "absolute",
+            top: -4,
+            left: -4,
+            right: -4,
+            bottom: -4,
+            borderRadius: 24,
+            opacity: 0.4,
+          }}
         >
           <LinearGradient
             colors={["#F59E0B", "#DC2626"]}
@@ -98,7 +47,7 @@ export default function WorkoutCard({
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           />
-        </Animated.View>
+        </View>
 
         <View className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-3xl overflow-hidden">
           <View className="p-6">
@@ -137,27 +86,25 @@ export default function WorkoutCard({
               </View>
             </View>
 
-            <Animated.View style={buttonAnimatedStyle}>
-              <Pressable onPress={handlePress} className="active:opacity-90">
-                <LinearGradient
-                  colors={["#DC2626", "#B91C1C"]}
-                  style={{
-                    paddingVertical: 18,
-                    paddingHorizontal: 32,
-                    borderRadius: 16,
-                  }}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                >
-                  <Text className="text-white text-xl font-bold text-center">
-                    Start Training
-                  </Text>
-                </LinearGradient>
-              </Pressable>
-            </Animated.View>
+            <Pressable onPress={handlePress} className="active:opacity-80">
+              <LinearGradient
+                colors={["#DC2626", "#B91C1C"]}
+                style={{
+                  paddingVertical: 18,
+                  paddingHorizontal: 32,
+                  borderRadius: 16,
+                }}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+              >
+                <Text className="text-white text-xl font-bold text-center">
+                  Start Training
+                </Text>
+              </LinearGradient>
+            </Pressable>
           </View>
         </View>
       </View>
-    </Animated.View>
+    </View>
   );
 }
