@@ -103,7 +103,7 @@ export default function HomeScreen({ navigation }: Props) {
 
         {isGenerating && <PulsingEnergyLoader />}
 
-        {!isGenerating && boxingLevel && (
+        {__DEV__ && !isGenerating && boxingLevel && (
           <View className="px-6 mb-4">
             <Pressable onPress={handleRegenerate} className="active:opacity-80">
               <LinearGradient
@@ -113,10 +113,10 @@ export default function HomeScreen({ navigation }: Props) {
                 style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 }}
               >
                 <Text className="text-white text-center text-lg font-bold">
-                  Generate Fresh Workout
+                  Dev: Generate Fresh Workout
                 </Text>
                 <Text className="text-gray-200 text-center text-xs mt-1">
-                  New plan based on your level
+                  Visible in dev only; paywall/daily limit TBD
                 </Text>
               </LinearGradient>
             </Pressable>
