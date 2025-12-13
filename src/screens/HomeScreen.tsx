@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, ScrollView } from "react-native";
+import { View, Text, ScrollView, Pressable } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 import { useUserStore } from "../state/userStore";
 import { generateWorkout } from "../api/workout-generator";
 import WorkoutCard from "../components/WorkoutCard";
 import PulsingEnergyLoader from "../components/PulsingEnergyLoader";
+import { ensureDailyReminder } from "../utils/notifications";
 
 type RootStackParamList = {
   Timer: undefined;
@@ -28,6 +30,7 @@ export default function HomeScreen({ navigation }: Props) {
 
   useEffect(() => {
     updateStreaks();
+    ensureDailyReminder();
     if (!currentWorkout && boxingLevel) {
       loadWorkout();
     }
@@ -52,6 +55,13 @@ export default function HomeScreen({ navigation }: Props) {
 
   const handleStartTraining = () => {
     navigation.navigate("Timer");
+  };
+
+  const handleRegenerate = async () => {
+    if (!boxingLevel || isGenerating) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setCurrentWorkout(null);
+    await loadWorkout();
   };
 
   return (
@@ -92,6 +102,26 @@ export default function HomeScreen({ navigation }: Props) {
         </View>
 
         {isGenerating && <PulsingEnergyLoader />}
+
+        {!isGenerating && boxingLevel && (
+          <View className="px-6 mb-4">
+            <Pressable onPress={handleRegenerate} className="active:opacity-80">
+              <LinearGradient
+                colors={["#B91C1C", "#DC2626"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 }}
+              >
+                <Text className="text-white text-center text-lg font-bold">
+                  Generate Fresh Workout
+                </Text>
+                <Text className="text-gray-200 text-center text-xs mt-1">
+                  New plan based on your level
+                </Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        )}
 
         {error && (
           <View className="mx-6 mb-6 bg-boxing-red/20 border border-boxing-red rounded-2xl p-4">
