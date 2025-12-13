@@ -1,4 +1,5 @@
 export type BoxingLevel = "beginner" | "intermediate" | "advanced";
+export type WorkoutType = "quick" | "power" | "endurance" | "technique";
 
 export interface PunchCombo {
   name: string;
@@ -12,8 +13,14 @@ export interface WorkoutPlan {
   duration: number;
   rounds: number;
   difficulty: BoxingLevel;
+  type: WorkoutType;
   combos: PunchCombo[];
   generatedAt: Date;
+  isFavorite?: boolean;
+}
+
+export interface SavedWorkout extends WorkoutPlan {
+  savedAt: Date;
 }
 
 export interface WorkoutHistory {
@@ -22,6 +29,8 @@ export interface WorkoutHistory {
   completedAt: Date;
   duration: number;
   rounds: number;
+  workoutName: string;
+  workoutType: WorkoutType;
 }
 
 export interface Achievement {

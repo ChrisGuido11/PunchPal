@@ -12,6 +12,7 @@ import { ensureDailyReminder } from "../utils/notifications";
 
 type RootStackParamList = {
   Timer: undefined;
+  Library: undefined;
 };
 
 type Props = NativeStackScreenProps<RootStackParamList>;
@@ -24,6 +25,7 @@ export default function HomeScreen({ navigation }: Props) {
   const setCurrentWorkout = useUserStore((s) => s.setCurrentWorkout);
   const currentStreak = useUserStore((s) => s.currentStreak);
   const updateStreaks = useUserStore((s) => s.updateStreaks);
+  const favoriteWorkouts = useUserStore((s) => s.favoriteWorkouts);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +105,44 @@ export default function HomeScreen({ navigation }: Props) {
 
         {isGenerating && <PulsingEnergyLoader />}
 
+        {/* Favorites Quick Access */}
+        {!isGenerating && favoriteWorkouts.length > 0 && (
+          <View className="px-6 mb-6">
+            <View className="flex-row items-center justify-between mb-3">
+              <Text className="text-lg font-bold text-white">❤️ Your Favorites</Text>
+              <Pressable onPress={() => navigation.navigate("Library")}>
+                <Text className="text-boxing-gold text-sm font-semibold">View All</Text>
+              </Pressable>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ paddingRight: 24 }}
+              className="mb-2"
+            >
+              {favoriteWorkouts.slice(0, 3).map((fav) => (
+                <Pressable
+                  key={fav.id}
+                  onPress={() => {
+                    setCurrentWorkout(fav);
+                    navigation.navigate("Timer");
+                  }}
+                  className="mr-3 active:opacity-80"
+                >
+                  <LinearGradient
+                    colors={["#1A1A1A", "#2A2A2A"]}
+                    style={{ borderRadius: 12, padding: 12, width: 140 }}
+                  >
+                    <Text className="text-sm font-bold text-white truncate mb-1">{fav.name}</Text>
+                    <Text className="text-xs text-gray-400 mb-2">{fav.duration} min</Text>
+                    <Text className="text-xs text-boxing-gold font-semibold">{fav.difficulty}</Text>
+                  </LinearGradient>
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
         {__DEV__ && !isGenerating && boxingLevel && (
           <View className="px-6 mb-4">
             <Pressable onPress={handleRegenerate} className="active:opacity-80">
@@ -117,6 +157,30 @@ export default function HomeScreen({ navigation }: Props) {
                 </Text>
                 <Text className="text-gray-200 text-center text-xs mt-1">
                   Visible in dev only; paywall/daily limit TBD
+                </Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        )}
+
+        {/* Library Button */}
+        {!isGenerating && boxingLevel && (
+          <View className="px-6 mb-4">
+            <Pressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                navigation.navigate("Library");
+              }}
+              className="active:opacity-80"
+            >
+              <LinearGradient
+                colors={["#2D3D3D", "#3A4A4A"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 }}
+              >
+                <Text className="text-white text-center text-base font-bold">
+                  📚 Workout Library
                 </Text>
               </LinearGradient>
             </Pressable>

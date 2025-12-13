@@ -1,9 +1,10 @@
 import { getGrokClient } from "./grok";
-import { BoxingLevel, WorkoutPlan, PunchCombo } from "../types/workout";
+import { BoxingLevel, WorkoutPlan, PunchCombo, WorkoutType } from "../types/workout";
 
 export async function generateWorkout(
   boxingLevel: BoxingLevel,
-  workoutHistory: number
+  workoutHistory: number,
+  workoutType: WorkoutType = "power"
 ): Promise<WorkoutPlan> {
   const grokClient = getGrokClient();
 
@@ -45,12 +46,57 @@ export async function generateWorkout(
 
   const guidelines = levelGuidelines[boxingLevel];
 
+  // Type-specific overrides
+  let typeGuidance = "";
+  let typeDuration = "";
+  let typeRounds = "";
+
+  switch (workoutType) {
+    case "quick":
+      typeGuidance =
+        "Focus on HIGH INTENSITY, short bursts. 15-20 minutes max. Reduce rest between rounds.";
+      typeDuration = "15-20 minutes";
+      typeRounds = "4-6 rounds";
+      break;
+    case "power":
+      typeGuidance =
+        "Focus on EXPLOSIVE POWER. Heavy handed combos with focus on impact. Standard rest.";
+      typeDuration = guidelines.duration;
+      typeRounds = guidelines.rounds;
+      break;
+    case "endurance":
+      typeGuidance =
+        "Focus on STEADY PACE, longer duration. Light combos at moderate intensity. Longer rest periods.";
+      typeDuration =
+        boxingLevel === "beginner"
+          ? "25-35 minutes"
+          : boxingLevel === "intermediate"
+            ? "35-45 minutes"
+            : "45-60 minutes";
+      typeRounds =
+        boxingLevel === "beginner"
+          ? "8-10 rounds"
+          : boxingLevel === "intermediate"
+            ? "12-15 rounds"
+            : "15-20 rounds";
+      break;
+    case "technique":
+      typeGuidance =
+        "Focus on FORM AND PRECISION. Slower pace with emphasis on correct mechanics and footwork. Lots of description.";
+      typeDuration =
+        boxingLevel === "beginner" ? "20-25 minutes" : boxingLevel === "intermediate" ? "30-40 minutes" : "40-50 minutes";
+      typeRounds =
+        boxingLevel === "beginner" ? "6-8 rounds" : boxingLevel === "intermediate" ? "10-12 rounds" : "12-15 rounds";
+      break;
+  }
+
   const systemPrompt = `You are a professional boxing coach with 20+ years of experience training fighters from amateur to professional level. Create a highly specific boxing workout that PERFECTLY matches the skill level.
 
 BOXING NOTATION (Standard):
 1 = Jab, 2 = Cross, 3 = Lead Hook, 4 = Rear Hook, 5 = Lead Uppercut, 6 = Rear Uppercut
 
 SKILL LEVEL: ${boxingLevel.toUpperCase()}
+WORKOUT TYPE: ${workingoutType.toUpperCase()} - ${typeGuidance}
 
 TRAINING PHILOSOPHY FOR THIS LEVEL:
 ${guidelines.focus}
@@ -67,9 +113,9 @@ ${guidelines.defense}
 INTENSITY & REST:
 ${guidelines.intensity}
 
-WORKOUT STRUCTURE:
-- Duration: ${guidelines.duration}
-- Rounds: ${guidelines.rounds}
+WORKOUT STRUCTURE FOR ${workoutType.toUpperCase()}:
+- Duration: ${typeDuration}
+- Rounds: ${typeRounds}
 - Tempo: ${guidelines.tempo}
 
 EXAMPLE COMBINATIONS FOR THIS LEVEL:
@@ -82,6 +128,7 @@ CRITICAL RULES:
 4. Include body shots (add "to body" in description) for intermediate/advanced
 5. Vary the combinations - don't repeat similar patterns
 6. Make workout names motivating and level-appropriate
+7. Workout type "${workoutType}" guidelines MUST be followed
 
 Return ONLY valid JSON in this exact format:
 {
@@ -127,6 +174,7 @@ Return ONLY valid JSON in this exact format:
       duration: workoutData.duration,
       rounds: workoutData.rounds,
       difficulty: boxingLevel,
+      type: workoutType,
       combos: workoutData.combos,
       generatedAt: new Date(),
     };

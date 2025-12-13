@@ -8,12 +8,14 @@ import OnboardingScreen from "../screens/OnboardingScreen";
 import HomeScreen from "../screens/HomeScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import TimerScreen from "../screens/TimerScreen";
+import WorkoutLibraryScreen from "../screens/WorkoutLibraryScreen";
 
 export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
   MainTabs: undefined;
   Timer: undefined;
+  Library: undefined;
 };
 
 export type TabParamList = {
@@ -88,6 +90,14 @@ export default function RootNavigator() {
         component={TimerScreen}
         options={{
           animation: "slide_from_bottom",
+          presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="Library"
+        component={WorkoutLibraryScreen}
+        options={{
+          animation: "slide_from_right",
           presentation: "card",
         }}
       />

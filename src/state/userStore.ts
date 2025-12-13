@@ -1,13 +1,15 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BoxingLevel, WorkoutPlan, WorkoutHistory } from "../types/workout";
+import { BoxingLevel, WorkoutPlan, WorkoutHistory, SavedWorkout } from "../types/workout";
 
 interface UserState {
   hasCompletedOnboarding: boolean;
   boxingLevel: BoxingLevel | null;
   currentWorkout: WorkoutPlan | null;
   workoutHistory: WorkoutHistory[];
+  favoriteWorkouts: SavedWorkout[];
+  recentlyCompleted: SavedWorkout[];
   lastWorkoutDate: string | null;
   currentStreak: number;
   longestStreak: number;
@@ -20,6 +22,8 @@ interface UserState {
   clearWorkoutHistory: () => void;
   updateStreaks: () => void;
   unlockAchievement: (achievementId: string) => void;
+  toggleFavorite: (workoutId: string, workout: SavedWorkout) => void;
+  addToRecentlyCompleted: (workout: SavedWorkout) => void;
 }
 
 const calculateStreak = (workoutHistory: WorkoutHistory[]): { currentStreak: number; longestStreak: number } => {
@@ -78,6 +82,8 @@ export const useUserStore = create<UserState>()(
       boxingLevel: null,
       currentWorkout: null,
       workoutHistory: [],
+      favoriteWorkouts: [],
+      recentlyCompleted: [],
       lastWorkoutDate: null,
       currentStreak: 0,
       longestStreak: 0,
@@ -120,6 +126,37 @@ export const useUserStore = create<UserState>()(
           return {
             unlockedAchievements: [...state.unlockedAchievements, achievementId],
           };
+        });
+      },
+
+      toggleFavorite: (workoutId, workout) => {
+        set((state) => {
+          const isFavorited = state.favoriteWorkouts.some((w) => w.id === workoutId);
+          if (isFavorited) {
+            return {
+              favoriteWorkouts: state.favoriteWorkouts.filter((w) => w.id !== workoutId),
+            };
+          }
+          const newFavorite: SavedWorkout = {
+            ...workout,
+            isFavorite: true,
+            savedAt: new Date(),
+          };
+          return {
+            favoriteWorkouts: [newFavorite, ...state.favoriteWorkouts],
+          };
+        });
+      },
+
+      addToRecentlyCompleted: (workout) => {
+        set((state) => {
+          const maxRecent = 5;
+          const newRecent: SavedWorkout = {
+            ...workout,
+            savedAt: new Date(),
+          };
+          const updated = [newRecent, ...state.recentlyCompleted].slice(0, maxRecent);
+          return { recentlyCompleted: updated };
         });
       },
 
