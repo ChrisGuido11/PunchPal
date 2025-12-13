@@ -1,8 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, Pressable, ScrollView, Linking } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
+import * as Speech from "expo-speech";
+import { Audio } from "expo-av";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { useUserStore } from "../state/userStore";
@@ -42,10 +44,91 @@ function TimerScreen({ navigation }: Props) {
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
 
+  const comboCalloutTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
+  const lastComboKeyRef = useRef<string | null>(null);
+  const tenSecondCalledRef = useRef(false);
+  const lastBeepSecondRef = useRef<number | null>(null);
+  const restSpokenRef = useRef<number | null>(null);
+  const beepSoundRef = useRef<Audio.Sound | null>(null);
+
   const totalRounds = currentWorkout?.rounds ?? 1;
   const combos = currentWorkout?.combos ?? [];
 
   const combo = useMemo(() => combos[currentComboIndex], [combos, currentComboIndex]);
+
+  const speak = useCallback((text: string) => {
+    Speech.speak(text, {
+      language: "en-US",
+      rate: 1,
+      pitch: 1,
+    });
+  }, []);
+
+  const clearComboCallouts = useCallback(() => {
+    comboCalloutTimeoutsRef.current.forEach((t) => clearTimeout(t));
+    comboCalloutTimeoutsRef.current = [];
+  }, []);
+
+  const scheduleComboCallouts = useCallback(
+    (comboName?: string, comboNotation?: string) => {
+      if (!comboName || !comboNotation) return;
+
+      clearComboCallouts();
+      tenSecondCalledRef.current = false;
+      lastBeepSecondRef.current = null;
+
+      const numbers = comboNotation.replace(/-/g, " ");
+
+      speak(comboName);
+      const t1 = setTimeout(() => speak(numbers), 0);
+      const t2 = setTimeout(() => speak(numbers), 5000);
+      const t3 = setTimeout(() => speak(numbers), 10000);
+      const t4 = setTimeout(() => speak("keep going"), 15000);
+
+      comboCalloutTimeoutsRef.current = [t1, t2, t3, t4];
+    },
+    [clearComboCallouts, speak]
+  );
+
+  const playBeep = useCallback(async () => {
+    try {
+      const sound = beepSoundRef.current;
+      if (!sound) return;
+      await sound.replayAsync();
+    } catch (error) {
+      console.error("Beep playback failed", error);
+    }
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadBeep = async () => {
+      try {
+        const { sound } = await Audio.Sound.createAsync({
+          uri: "https://actions.google.com/sounds/v1/alarms/beep_short.ogg",
+        });
+        if (isMounted) {
+          beepSoundRef.current = sound;
+        } else {
+          await sound.unloadAsync();
+        }
+      } catch (error) {
+        console.error("Failed to load beep sound", error);
+      }
+    };
+
+    loadBeep();
+
+    return () => {
+      isMounted = false;
+      clearComboCallouts();
+      Speech.stop();
+      if (beepSoundRef.current) {
+        beepSoundRef.current.unloadAsync();
+        beepSoundRef.current = null;
+      }
+    };
+  }, [clearComboCallouts]);
 
   const finishWorkout = useCallback(() => {
     if (!currentWorkout) return;
@@ -74,9 +157,10 @@ function TimerScreen({ navigation }: Props) {
       newAchievements.forEach((id) => unlockAchievement(id));
     }, 100);
 
+    speak("Amazing work. Workout complete. You are getting sharper every round.");
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     navigation.navigate("Home");
-  }, [addWorkoutToHistory, currentWorkout, currentStreak, longestStreak, navigation, unlockAchievement, unlockedAchievements, workoutHistory]);
+  }, [addWorkoutToHistory, currentWorkout, currentStreak, longestStreak, navigation, speak, unlockAchievement, unlockedAchievements, workoutHistory]);
 
   const startRest = useCallback(() => {
     setPhase("rest");
@@ -122,6 +206,57 @@ function TimerScreen({ navigation }: Props) {
 
     return () => clearInterval(interval);
   }, [currentRound, finishWorkout, isPaused, isRunning, phase, startNextRound, startRest, totalRounds]);
+
+  useEffect(() => {
+    if (!isRunning || isPaused) {
+      Speech.stop();
+      clearComboCallouts();
+    }
+  }, [clearComboCallouts, isPaused, isRunning]);
+
+  useEffect(() => {
+    if (!isRunning || isPaused || phase !== "work") {
+      clearComboCallouts();
+      return;
+    }
+    if (!combo) return;
+
+    const comboKey = `${currentRound}-${combo.notation}-${combo.name}`;
+    if (lastComboKeyRef.current !== comboKey) {
+      lastComboKeyRef.current = comboKey;
+      scheduleComboCallouts(combo.name, combo.notation);
+    }
+  }, [clearComboCallouts, combo, currentRound, isPaused, isRunning, phase, scheduleComboCallouts]);
+
+  useEffect(() => {
+    if (!isRunning || isPaused) return;
+    if (phase === "rest") {
+      if (restSpokenRef.current !== currentRound) {
+        restSpokenRef.current = currentRound;
+        speak(`Rest. ${restRemaining} seconds`);
+      }
+    } else {
+      restSpokenRef.current = null;
+    }
+  }, [currentRound, isPaused, isRunning, phase, restRemaining, speak]);
+
+  useEffect(() => {
+    if (!isRunning || isPaused || phase !== "work") return;
+    if (timeRemaining === 10 && !tenSecondCalledRef.current) {
+      tenSecondCalledRef.current = true;
+      speak("10 seconds");
+    }
+  }, [isPaused, isRunning, phase, speak, timeRemaining]);
+
+  useEffect(() => {
+    if (!isRunning || isPaused || phase !== "work") return;
+    if (timeRemaining <= 5 && timeRemaining > 0) {
+      if (lastBeepSecondRef.current !== timeRemaining) {
+        lastBeepSecondRef.current = timeRemaining;
+        playBeep();
+      }
+    }
+  }, [isPaused, isRunning, phase, playBeep, timeRemaining]);
 
   useEffect(() => {
     if (!isRunning || combos.length === 0 || phase !== "work") return;
