@@ -9,11 +9,9 @@ import { generateWorkout } from "../api/workout-generator";
 import WorkoutCard from "../components/WorkoutCard";
 import PulsingEnergyLoader from "../components/PulsingEnergyLoader";
 import { ensureDailyReminder } from "../utils/notifications";
-import { hasEntitlement } from "../lib/revenuecatClient";
 
 type RootStackParamList = {
   Timer: undefined;
-  Paywall: undefined;
   // Library: undefined; // TODO: enable library later
 };
 
@@ -31,23 +29,14 @@ export default function HomeScreen({ navigation }: Props) {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isPremium, setIsPremium] = useState(false);
 
   useEffect(() => {
     updateStreaks();
     ensureDailyReminder();
-    checkPremiumStatus();
     if (!currentWorkout && boxingLevel) {
       loadWorkout();
     }
   }, [currentWorkout, boxingLevel]);
-
-  const checkPremiumStatus = async () => {
-    const result = await hasEntitlement("premium");
-    if (result.ok) {
-      setIsPremium(result.data);
-    }
-  };
 
   const loadWorkout = async () => {
     if (!boxingLevel) return;
@@ -72,14 +61,6 @@ export default function HomeScreen({ navigation }: Props) {
 
   const handleRegenerate = async () => {
     if (!boxingLevel || isGenerating) return;
-
-    // Check if user has premium
-    if (!isPremium) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      navigation.navigate("Paywall");
-      return;
-    }
-
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCurrentWorkout(null);
     await loadWorkout();
@@ -136,7 +117,7 @@ export default function HomeScreen({ navigation }: Props) {
               onStartTraining={handleStartTraining}
             />
 
-            {!isGenerating && boxingLevel ? (
+            {__DEV__ && !isGenerating && boxingLevel ? (
               <View className="px-6 mt-4">
                 <Pressable onPress={handleRegenerate} className="active:opacity-80">
                   <LinearGradient
