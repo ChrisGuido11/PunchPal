@@ -48,6 +48,8 @@ function TimerScreen({ navigation }: Props) {
   const lastComboKeyRef = useRef<string | null>(null);
   const tenSecondCalledRef = useRef(false);
   const lastBeepSecondRef = useRef<number | null>(null);
+  const lastMinuteTenRef = useRef<number | null>(null);
+  const lastRestBeepSecondRef = useRef<number | null>(null);
   const restSpokenRef = useRef<number | null>(null);
   const beepSoundRef = useRef<Audio.Sound | null>(null);
 
@@ -282,16 +284,44 @@ function TimerScreen({ navigation }: Props) {
   }, [currentRound, isPaused, isRunning, phase, restRemaining, speak]);
 
   useEffect(() => {
+    if (!isRunning || isPaused || phase !== "rest") return;
+    if (restRemaining === 10) {
+      speak("10 seconds, get ready");
+    }
+  }, [isPaused, isRunning, phase, restRemaining, speak]);
+
+  useEffect(() => {
+    if (!isRunning || isPaused || phase !== "rest") return;
+    if (restRemaining <= 5 && restRemaining > 0) {
+      if (lastRestBeepSecondRef.current !== restRemaining) {
+        lastRestBeepSecondRef.current = restRemaining;
+        playBeep();
+      }
+    } else if (restRemaining > 5) {
+      lastRestBeepSecondRef.current = null;
+    }
+  }, [isPaused, isRunning, phase, playBeep, restRemaining]);
+
+  useEffect(() => {
     if (!isRunning || isPaused || phase !== "work") return;
+    const secondInMinute = timeRemaining % 60;
+    if (secondInMinute === 10 && lastMinuteTenRef.current !== timeRemaining) {
+      lastMinuteTenRef.current = timeRemaining;
+      speak("10 seconds");
+      if (timeRemaining === 10) {
+        tenSecondCalledRef.current = true;
+      }
+    }
     if (timeRemaining === 10 && !tenSecondCalledRef.current) {
       tenSecondCalledRef.current = true;
-      speak("10 seconds");
+      // Already spoke above when secondInMinute === 10; keep guard to avoid double.
     }
   }, [isPaused, isRunning, phase, speak, timeRemaining]);
 
   useEffect(() => {
     if (!isRunning || isPaused || phase !== "work") return;
-    if (timeRemaining <= 5 && timeRemaining > 0) {
+    const secondInMinute = timeRemaining % 60;
+    if (secondInMinute <= 5 && secondInMinute > 0) {
       if (lastBeepSecondRef.current !== timeRemaining) {
         lastBeepSecondRef.current = timeRemaining;
         playBeep();
