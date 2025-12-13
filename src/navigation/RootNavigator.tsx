@@ -8,14 +8,14 @@ import OnboardingScreen from "../screens/OnboardingScreen";
 import HomeScreen from "../screens/HomeScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import TimerScreen from "../screens/TimerScreen";
-import WorkoutLibraryScreen from "../screens/WorkoutLibraryScreen";
+// import WorkoutLibraryScreen from "../screens/WorkoutLibraryScreen"; // TODO: enable library later
 
 export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
   MainTabs: undefined;
   Timer: undefined;
-  Library: undefined;
+  // Library: undefined;
 };
 
 export type TabParamList = {
@@ -93,14 +93,15 @@ export default function RootNavigator() {
           presentation: "card",
         }}
       />
-      <Stack.Screen
+      {/* Library screen hidden for now */}
+      {/* <Stack.Screen
         name="Library"
         component={WorkoutLibraryScreen}
         options={{
           animation: "slide_from_right",
           presentation: "card",
         }}
-      />
+      /> */}
     </Stack.Navigator>
   );
 }
