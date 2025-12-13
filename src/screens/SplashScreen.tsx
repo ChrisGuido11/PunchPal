@@ -7,7 +7,7 @@ import { useUserStore } from "../state/userStore";
 type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
-  Home: undefined;
+  MainTabs: undefined;
 };
 
 type Props = NativeStackScreenProps<RootStackParamList, "Splash">;
@@ -20,7 +20,7 @@ export default function SplashScreen({ navigation }: Props) {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (hasCompletedOnboarding) {
-        navigation.replace("Home");
+        navigation.replace("MainTabs");
       } else {
         navigation.replace("Onboarding");
       }

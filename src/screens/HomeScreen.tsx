@@ -9,13 +9,10 @@ import WorkoutCard from "../components/WorkoutCard";
 import PulsingEnergyLoader from "../components/PulsingEnergyLoader";
 
 type RootStackParamList = {
-  Splash: undefined;
-  Onboarding: undefined;
-  Home: undefined;
   Timer: undefined;
 };
 
-type Props = NativeStackScreenProps<RootStackParamList, "Home">;
+type Props = NativeStackScreenProps<RootStackParamList>;
 
 export default function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();

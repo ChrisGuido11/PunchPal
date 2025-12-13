@@ -9,7 +9,7 @@ import { useUserStore } from "../state/userStore";
 type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
-  Home: undefined;
+  MainTabs: undefined;
 };
 
 type Props = NativeStackScreenProps<RootStackParamList, "Onboarding">;
@@ -45,7 +45,7 @@ export default function OnboardingScreen({ navigation }: Props) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setBoxingLevel(selectedLevel);
     setHasCompletedOnboarding(true);
-    navigation.replace("Home");
+    navigation.replace("MainTabs");
   };
 
   return (
