@@ -1,17 +1,9 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, Pressable, ScrollView } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withSpring,
-  withSequence,
-  runOnJS,
-} from "react-native-reanimated";
 import { useUserStore } from "../state/userStore";
 
 type RootStackParamList = {
@@ -29,28 +21,34 @@ export default function TimerScreen({ navigation }: Props) {
   const addWorkoutToHistory = useUserStore((s) => s.addWorkoutToHistory);
 
   const [currentRound, setCurrentRound] = useState(1);
-  const [timeRemaining, setTimeRemaining] = useState(180); // 3 minutes
+  const [timeRemaining, setTimeRemaining] = useState(180);
   const [isRunning, setIsRunning] = useState(false);
   const [currentComboIndex, setCurrentComboIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
 
-  const buttonScale = useSharedValue(1);
-  const comboOpacity = useSharedValue(1);
+  const handleRoundComplete = useCallback(() => {
+    if (!currentWorkout) return;
 
-  const buttonAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: buttonScale.value }],
-    };
-  });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-  const comboAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      opacity: comboOpacity.value,
-    };
-  });
+    if (currentRound >= currentWorkout.rounds) {
+      addWorkoutToHistory({
+        id: `history-${Date.now()}`,
+        workoutPlanId: currentWorkout.id,
+        completedAt: new Date(),
+        duration: currentWorkout.duration,
+        rounds: currentWorkout.rounds,
+      });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      navigation.navigate("Home");
+    } else {
+      setCurrentRound((prev) => prev + 1);
+      setTimeRemaining(180);
+    }
+  }, [currentWorkout, currentRound, addWorkoutToHistory, navigation]);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
+    let interval: ReturnType<typeof setInterval> | null = null;
 
     if (isRunning && !isPaused && timeRemaining > 0) {
       interval = setInterval(() => {
@@ -67,68 +65,17 @@ export default function TimerScreen({ navigation }: Props) {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [isRunning, isPaused, timeRemaining]);
+  }, [isRunning, isPaused, timeRemaining, handleRoundComplete]);
 
   useEffect(() => {
-    if (isRunning && timeRemaining % 60 === 0 && timeRemaining !== 180) {
-      changeCombo();
+    if (isRunning && currentWorkout && timeRemaining % 60 === 0 && timeRemaining !== 180) {
+      setCurrentComboIndex((prev) => (prev + 1) % currentWorkout.combos.length);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-  }, [timeRemaining, isRunning]);
-
-  const updateComboIndex = () => {
-    if (!currentWorkout) return;
-    setCurrentComboIndex((prev) => (prev + 1) % currentWorkout.combos.length);
-  };
-
-  const changeCombo = () => {
-    if (!currentWorkout) return;
-
-    comboOpacity.value = withSequence(
-      withTiming(0, { duration: 200 }),
-      withTiming(1, { duration: 200 })
-    );
-
-    setTimeout(() => {
-      updateComboIndex();
-    }, 200);
-
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  };
-
-  const handleRoundComplete = () => {
-    if (!currentWorkout) return;
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-    if (currentRound >= currentWorkout.rounds) {
-      handleWorkoutComplete();
-    } else {
-      setCurrentRound((prev) => prev + 1);
-      setTimeRemaining(180);
-    }
-  };
-
-  const handleWorkoutComplete = () => {
-    if (!currentWorkout) return;
-
-    addWorkoutToHistory({
-      id: `history-${Date.now()}`,
-      workoutPlanId: currentWorkout.id,
-      completedAt: new Date(),
-      duration: currentWorkout.duration,
-      rounds: currentWorkout.rounds,
-    });
-
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    navigation.navigate("Home");
-  };
+  }, [timeRemaining, isRunning, currentWorkout]);
 
   const handleStartPause = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    buttonScale.value = withSequence(
-      withSpring(0.92, { damping: 10 }),
-      withSpring(1)
-    );
 
     if (!isRunning) {
       setIsRunning(true);
@@ -145,9 +92,16 @@ export default function TimerScreen({ navigation }: Props) {
 
   if (!currentWorkout) {
     return (
-      <View className="flex-1 items-center justify-center bg-boxing-darkBg">
-        <Text className="text-white text-xl">No workout selected</Text>
-      </View>
+      <LinearGradient
+        colors={["#0F0F0F", "#1A1A1A"]}
+        style={{ flex: 1 }}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+      >
+        <View className="flex-1 items-center justify-center">
+          <Text className="text-white text-xl">No workout selected</Text>
+        </View>
+      </LinearGradient>
     );
   }
 
@@ -173,7 +127,7 @@ export default function TimerScreen({ navigation }: Props) {
           <View className="flex-row items-center justify-between mb-8">
             <Pressable onPress={handleStop}>
               <Text className="text-boxing-gold text-lg font-semibold">
-                ← Back
+                Back
               </Text>
             </Pressable>
             <View>
@@ -194,53 +148,41 @@ export default function TimerScreen({ navigation }: Props) {
             </Text>
           </View>
 
-          <Animated.View
-            style={comboAnimatedStyle}
-            className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-3xl p-8 mb-8"
-          >
+          <View className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-3xl p-8 mb-8">
             <Text className="text-gray-400 text-sm mb-2">Current Combo</Text>
             <Text className="text-3xl font-black text-white mb-3">
-              {currentCombo.name}
+              {currentCombo?.name ?? "Loading..."}
             </Text>
             <Text className="text-4xl font-bold text-boxing-gold mb-4">
-              {currentCombo.notation}
+              {currentCombo?.notation ?? ""}
             </Text>
             <Text className="text-base text-gray-300">
-              {currentCombo.description}
+              {currentCombo?.description ?? ""}
             </Text>
-          </Animated.View>
+          </View>
 
           <View className="space-y-4">
-            <Animated.View style={buttonAnimatedStyle}>
-              <Pressable
-                onPress={handleStartPause}
-                className="active:opacity-90"
+            <Pressable onPress={handleStartPause} className="active:opacity-80">
+              <LinearGradient
+                colors={["#DC2626", "#B91C1C"]}
+                style={{
+                  paddingVertical: 20,
+                  paddingHorizontal: 32,
+                  borderRadius: 16,
+                }}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
               >
-                <LinearGradient
-                  colors={["#DC2626", "#B91C1C"]}
-                  style={{
-                    paddingVertical: 20,
-                    paddingHorizontal: 32,
-                    borderRadius: 16,
-                  }}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                >
-                  <Text className="text-white text-2xl font-bold text-center">
-                    {!isRunning
-                      ? "Start"
-                      : isPaused
-                      ? "Resume"
-                      : "Pause"}
-                  </Text>
-                </LinearGradient>
-              </Pressable>
-            </Animated.View>
+                <Text className="text-white text-2xl font-bold text-center">
+                  {!isRunning ? "Start" : isPaused ? "Resume" : "Pause"}
+                </Text>
+              </LinearGradient>
+            </Pressable>
 
             {isRunning && (
               <Pressable
                 onPress={handleStop}
-                className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-2xl py-5 active:opacity-90"
+                className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-2xl py-5 active:opacity-80"
               >
                 <Text className="text-white text-xl font-bold text-center">
                   End Workout
