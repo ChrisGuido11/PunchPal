@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { View, Text, Pressable, ScrollView } from "react-native";
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { useUserStore } from "../state/userStore";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 type RootStackParamList = {
   Splash: undefined;
@@ -15,7 +15,7 @@ type RootStackParamList = {
 
 type Props = NativeStackScreenProps<RootStackParamList, "Timer">;
 
-export default function TimerScreen({ navigation }: Props) {
+function TimerScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const currentWorkout = useUserStore((s) => s.currentWorkout);
   const addWorkoutToHistory = useUserStore((s) => s.addWorkoutToHistory);
@@ -26,78 +26,76 @@ export default function TimerScreen({ navigation }: Props) {
   const [currentComboIndex, setCurrentComboIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
 
-  const handleRoundComplete = useCallback(() => {
+  const totalRounds = currentWorkout?.rounds ?? 1;
+  const combos = currentWorkout?.combos ?? [];
+
+  const finishWorkout = useCallback(() => {
     if (!currentWorkout) return;
 
+    addWorkoutToHistory({
+      id: `history-${Date.now()}`,
+      workoutPlanId: currentWorkout.id,
+      completedAt: new Date(),
+      duration: currentWorkout.duration,
+      rounds: currentWorkout.rounds,
+    });
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    navigation.navigate("Home");
+  }, [currentWorkout, addWorkoutToHistory, navigation]);
+
+  const nextRound = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    if (currentRound >= currentWorkout.rounds) {
-      addWorkoutToHistory({
-        id: `history-${Date.now()}`,
-        workoutPlanId: currentWorkout.id,
-        completedAt: new Date(),
-        duration: currentWorkout.duration,
-        rounds: currentWorkout.rounds,
-      });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      navigation.navigate("Home");
+    if (currentRound >= totalRounds) {
+      finishWorkout();
     } else {
-      setCurrentRound((prev) => prev + 1);
+      setCurrentRound((r) => r + 1);
       setTimeRemaining(180);
     }
-  }, [currentWorkout, currentRound, addWorkoutToHistory, navigation]);
+  }, [currentRound, totalRounds, finishWorkout]);
 
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval> | null = null;
+    if (!isRunning || isPaused) return;
 
-    if (isRunning && !isPaused && timeRemaining > 0) {
-      interval = setInterval(() => {
-        setTimeRemaining((prev) => {
-          if (prev <= 1) {
-            handleRoundComplete();
-            return 180;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    }
+    const interval = setInterval(() => {
+      setTimeRemaining((t) => {
+        if (t <= 1) {
+          nextRound();
+          return 180;
+        }
+        return t - 1;
+      });
+    }, 1000);
 
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isRunning, isPaused, timeRemaining, handleRoundComplete]);
+    return () => clearInterval(interval);
+  }, [isRunning, isPaused, nextRound]);
 
   useEffect(() => {
-    if (isRunning && currentWorkout && timeRemaining % 60 === 0 && timeRemaining !== 180) {
-      setCurrentComboIndex((prev) => (prev + 1) % currentWorkout.combos.length);
+    if (!isRunning || combos.length === 0) return;
+    if (timeRemaining % 60 === 0 && timeRemaining !== 180) {
+      setCurrentComboIndex((i) => (i + 1) % combos.length);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
-  }, [timeRemaining, isRunning, currentWorkout]);
+  }, [timeRemaining, isRunning, combos.length]);
 
-  const handleStartPause = () => {
+  const toggleRunning = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-
     if (!isRunning) {
       setIsRunning(true);
       setIsPaused(false);
     } else {
-      setIsPaused(!isPaused);
+      setIsPaused((p) => !p);
     }
   };
 
-  const handleStop = () => {
+  const endWorkout = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     navigation.goBack();
   };
 
-  if (!currentWorkout) {
+  if (!currentWorkout || combos.length === 0) {
     return (
-      <LinearGradient
-        colors={["#0F0F0F", "#1A1A1A"]}
-        style={{ flex: 1 }}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 0, y: 1 }}
-      >
+      <LinearGradient colors={["#0F0F0F", "#1A1A1A"]} style={{ flex: 1 }}>
         <View className="flex-1 items-center justify-center">
           <Text className="text-white text-xl">No workout selected</Text>
         </View>
@@ -105,17 +103,12 @@ export default function TimerScreen({ navigation }: Props) {
     );
   }
 
-  const minutes = Math.floor(timeRemaining / 60);
-  const seconds = timeRemaining % 60;
-  const currentCombo = currentWorkout.combos[currentComboIndex];
+  const mins = Math.floor(timeRemaining / 60);
+  const secs = timeRemaining % 60;
+  const combo = combos[currentComboIndex];
 
   return (
-    <LinearGradient
-      colors={["#0F0F0F", "#1A1A1A"]}
-      style={{ flex: 1 }}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 0, y: 1 }}
-    >
+    <LinearGradient colors={["#0F0F0F", "#1A1A1A"]} style={{ flex: 1 }}>
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
@@ -125,7 +118,7 @@ export default function TimerScreen({ navigation }: Props) {
       >
         <View className="px-6">
           <View className="flex-row items-center justify-between mb-8">
-            <Pressable onPress={handleStop}>
+            <Pressable onPress={endWorkout}>
               <Text className="text-boxing-gold text-lg font-semibold">
                 Back
               </Text>
@@ -133,15 +126,14 @@ export default function TimerScreen({ navigation }: Props) {
             <View>
               <Text className="text-gray-400 text-sm text-right">Round</Text>
               <Text className="text-white text-2xl font-bold text-right">
-                {currentRound} / {currentWorkout.rounds}
+                {currentRound} / {totalRounds}
               </Text>
             </View>
           </View>
 
           <View className="items-center mb-12">
             <Text className="text-8xl font-black text-white tracking-tight mb-2">
-              {String(minutes).padStart(2, "0")}:
-              {String(seconds).padStart(2, "0")}
+              {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
             </Text>
             <Text className="text-xl text-gray-400">
               {isPaused ? "Paused" : isRunning ? "Training" : "Ready"}
@@ -151,18 +143,18 @@ export default function TimerScreen({ navigation }: Props) {
           <View className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-3xl p-8 mb-8">
             <Text className="text-gray-400 text-sm mb-2">Current Combo</Text>
             <Text className="text-3xl font-black text-white mb-3">
-              {currentCombo?.name ?? "Loading..."}
+              {combo?.name ?? "---"}
             </Text>
             <Text className="text-4xl font-bold text-boxing-gold mb-4">
-              {currentCombo?.notation ?? ""}
+              {combo?.notation ?? "---"}
             </Text>
             <Text className="text-base text-gray-300">
-              {currentCombo?.description ?? ""}
+              {combo?.description ?? ""}
             </Text>
           </View>
 
           <View className="space-y-4">
-            <Pressable onPress={handleStartPause} className="active:opacity-80">
+            <Pressable onPress={toggleRunning} className="active:opacity-80">
               <LinearGradient
                 colors={["#DC2626", "#B91C1C"]}
                 style={{
@@ -170,8 +162,6 @@ export default function TimerScreen({ navigation }: Props) {
                   paddingHorizontal: 32,
                   borderRadius: 16,
                 }}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
               >
                 <Text className="text-white text-2xl font-bold text-center">
                   {!isRunning ? "Start" : isPaused ? "Resume" : "Pause"}
@@ -181,7 +171,7 @@ export default function TimerScreen({ navigation }: Props) {
 
             {isRunning && (
               <Pressable
-                onPress={handleStop}
+                onPress={endWorkout}
                 className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-2xl py-5 active:opacity-80"
               >
                 <Text className="text-white text-xl font-bold text-center">
@@ -195,3 +185,5 @@ export default function TimerScreen({ navigation }: Props) {
     </LinearGradient>
   );
 }
+
+export default TimerScreen;
