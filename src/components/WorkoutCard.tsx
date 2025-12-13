@@ -1,6 +1,5 @@
 import React, { useEffect } from "react";
 import { View, Text, Pressable } from "react-native";
-import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import Animated, {
   useSharedValue,
@@ -61,9 +60,10 @@ export default function WorkoutCard({
 
   const handlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    buttonScale.value = withSpring(0.92, { damping: 10 }, () => {
-      buttonScale.value = withSpring(1);
-    });
+    buttonScale.value = withSequence(
+      withSpring(0.92, { damping: 10 }),
+      withSpring(1)
+    );
     onStartTraining();
   };
 

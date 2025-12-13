@@ -9,6 +9,8 @@ import Animated, {
   useAnimatedStyle,
   withTiming,
   withSpring,
+  withSequence,
+  runOnJS,
 } from "react-native-reanimated";
 import { useUserStore } from "../state/userStore";
 
@@ -73,15 +75,22 @@ export default function TimerScreen({ navigation }: Props) {
     }
   }, [timeRemaining, isRunning]);
 
+  const updateComboIndex = () => {
+    if (!currentWorkout) return;
+    setCurrentComboIndex((prev) => (prev + 1) % currentWorkout.combos.length);
+  };
+
   const changeCombo = () => {
     if (!currentWorkout) return;
 
-    comboOpacity.value = withTiming(0, { duration: 200 }, () => {
-      setCurrentComboIndex(
-        (prev) => (prev + 1) % currentWorkout.combos.length
-      );
-      comboOpacity.value = withTiming(1, { duration: 200 });
-    });
+    comboOpacity.value = withSequence(
+      withTiming(0, { duration: 200 }),
+      withTiming(1, { duration: 200 })
+    );
+
+    setTimeout(() => {
+      updateComboIndex();
+    }, 200);
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
@@ -116,9 +125,10 @@ export default function TimerScreen({ navigation }: Props) {
 
   const handleStartPause = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    buttonScale.value = withSpring(0.92, { damping: 10 }, () => {
-      buttonScale.value = withSpring(1);
-    });
+    buttonScale.value = withSequence(
+      withSpring(0.92, { damping: 10 }),
+      withSpring(1)
+    );
 
     if (!isRunning) {
       setIsRunning(true);

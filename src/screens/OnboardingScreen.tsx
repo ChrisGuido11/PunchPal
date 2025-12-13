@@ -6,6 +6,7 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withSpring,
+  withSequence,
 } from "react-native-reanimated";
 import * as Haptics from "expo-haptics";
 import { BoxingLevel } from "../types/workout";
@@ -56,9 +57,10 @@ export default function OnboardingScreen({ navigation }: Props) {
     if (!selectedLevel) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    buttonScale.value = withSpring(0.95, { damping: 10 }, () => {
-      buttonScale.value = withSpring(1);
-    });
+    buttonScale.value = withSequence(
+      withSpring(0.95, { damping: 10 }),
+      withSpring(1)
+    );
 
     setBoxingLevel(selectedLevel);
     setHasCompletedOnboarding(true);
