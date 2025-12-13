@@ -57,6 +57,8 @@ function TimerScreen({ navigation }: Props) {
       completedAt,
       duration: currentWorkout.duration,
       rounds: currentWorkout.rounds,
+      workoutName: currentWorkout.name,
+      workoutType: currentWorkout.type,
     };
 
     addWorkoutToHistory(entry);

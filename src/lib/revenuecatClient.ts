@@ -14,20 +14,37 @@
  * - Web: Disabled (RevenueCat only supports native app stores)
  *
  * The module automatically selects the correct key based on __DEV__ mode.
- * 
+ *
  * This module is used to get the current customer info, offerings, and purchase packages.
  * These exported functions are found at the bottom of the file.
  */
 
 import { Platform } from "react-native";
-import Purchases, {
-  type PurchasesOfferings,
-  type CustomerInfo,
-  type PurchasesPackage,
-} from "react-native-purchases";
 
-// Check if running on web
+// Check if running on web - must be checked before importing Purchases
 const isWeb = Platform.OS === "web";
+
+// Only import Purchases on native platforms to avoid NativeEventEmitter error
+let Purchases: typeof import("react-native-purchases").default | null = null;
+let PurchasesLogLevel: typeof import("react-native-purchases").LOG_LEVEL | null =
+  null;
+
+if (!isWeb) {
+  try {
+    const purchasesModule = require("react-native-purchases");
+    Purchases = purchasesModule.default;
+    PurchasesLogLevel = purchasesModule.LOG_LEVEL;
+  } catch (e) {
+    console.log("[RevenueCat] Failed to load native module:", e);
+  }
+}
+
+// Re-export types for consumers
+export type {
+  PurchasesOfferings,
+  CustomerInfo,
+  PurchasesPackage,
+} from "react-native-purchases";
 
 // Check for environment keys
 const testKey = process.env.EXPO_PUBLIC_VIBECODE_REVENUECAT_TEST_KEY;
@@ -37,7 +54,7 @@ const prodKey = process.env.EXPO_PUBLIC_VIBECODE_REVENUECAT_APPLE_KEY;
 const apiKey = isWeb ? undefined : __DEV__ ? testKey : prodKey;
 
 // Track if RevenueCat is enabled
-const isEnabled = !!apiKey && !isWeb;
+const isEnabled = !!apiKey && !isWeb && !!Purchases;
 
 const LOG_PREFIX = "[RevenueCat]";
 
@@ -62,7 +79,7 @@ const guardRevenueCatUsage = async <T>(
     return { ok: false, reason: "web_not_supported" };
   }
 
-  if (!isEnabled) {
+  if (!isEnabled || !Purchases) {
     console.log(`${LOG_PREFIX} ${action} skipped: RevenueCat not configured`);
     return { ok: false, reason: "not_configured" };
   }
@@ -76,15 +93,14 @@ const guardRevenueCatUsage = async <T>(
   }
 };
 
-// Initialize RevenueCat if key exists
-if (isEnabled) {
+// Initialize RevenueCat if key exists and we're on native
+if (isEnabled && Purchases && PurchasesLogLevel) {
   try {
     // Set up custom log handler to suppress Test Store and expected errors
     // These are non-errors thrown as errors by the SDK, and will be confusing to the user.
     Purchases.setLogHandler((logLevel, message) => {
-
       // Log ERROR messages normally
-      if (logLevel === Purchases.LOG_LEVEL.ERROR) {
+      if (logLevel === PurchasesLogLevel!.ERROR) {
         console.log(LOG_PREFIX, message);
       }
     });
@@ -124,9 +140,9 @@ export const isRevenueCatEnabled = (): boolean => {
  * }
  */
 export const getOfferings = (): Promise<
-  RevenueCatResult<PurchasesOfferings>
+  RevenueCatResult<import("react-native-purchases").PurchasesOfferings>
 > => {
-  return guardRevenueCatUsage("getOfferings", () => Purchases.getOfferings());
+  return guardRevenueCatUsage("getOfferings", () => Purchases!.getOfferings());
 };
 
 /**
@@ -142,10 +158,11 @@ export const getOfferings = (): Promise<
  * }
  */
 export const purchasePackage = (
-  packageToPurchase: PurchasesPackage,
-): Promise<RevenueCatResult<CustomerInfo>> => {
+  packageToPurchase: import("react-native-purchases").PurchasesPackage,
+): Promise<RevenueCatResult<import("react-native-purchases").CustomerInfo>> => {
   return guardRevenueCatUsage("purchasePackage", async () => {
-    const { customerInfo } = await Purchases.purchasePackage(packageToPurchase);
+    const { customerInfo } =
+      await Purchases!.purchasePackage(packageToPurchase);
     return customerInfo;
   });
 };
@@ -164,9 +181,11 @@ export const purchasePackage = (
  *   // User has active premium entitlement
  * }
  */
-export const getCustomerInfo = (): Promise<RevenueCatResult<CustomerInfo>> => {
+export const getCustomerInfo = (): Promise<
+  RevenueCatResult<import("react-native-purchases").CustomerInfo>
+> => {
   return guardRevenueCatUsage("getCustomerInfo", () =>
-    Purchases.getCustomerInfo(),
+    Purchases!.getCustomerInfo(),
   );
 };
 
@@ -182,10 +201,10 @@ export const getCustomerInfo = (): Promise<RevenueCatResult<CustomerInfo>> => {
  * }
  */
 export const restorePurchases = (): Promise<
-  RevenueCatResult<CustomerInfo>
+  RevenueCatResult<import("react-native-purchases").CustomerInfo>
 > => {
   return guardRevenueCatUsage("restorePurchases", () =>
-    Purchases.restorePurchases(),
+    Purchases!.restorePurchases(),
   );
 };
 
@@ -203,7 +222,7 @@ export const restorePurchases = (): Promise<
  */
 export const setUserId = (userId: string): Promise<RevenueCatResult<void>> => {
   return guardRevenueCatUsage("setUserId", async () => {
-    await Purchases.logIn(userId);
+    await Purchases!.logIn(userId);
   });
 };
 
@@ -220,7 +239,7 @@ export const setUserId = (userId: string): Promise<RevenueCatResult<void>> => {
  */
 export const logoutUser = (): Promise<RevenueCatResult<void>> => {
   return guardRevenueCatUsage("logoutUser", async () => {
-    await Purchases.logOut();
+    await Purchases!.logOut();
   });
 };
 
@@ -298,7 +317,9 @@ export const hasActiveSubscription = async (): Promise<
  */
 export const getPackage = async (
   packageIdentifier: string,
-): Promise<RevenueCatResult<PurchasesPackage | null>> => {
+): Promise<
+  RevenueCatResult<import("react-native-purchases").PurchasesPackage | null>
+> => {
   const offeringsResult = await getOfferings();
 
   if (!offeringsResult.ok) {

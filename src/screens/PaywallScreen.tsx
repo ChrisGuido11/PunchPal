@@ -16,8 +16,8 @@ import {
   getPackage,
   purchasePackage,
   isRevenueCatEnabled,
+  type PurchasesPackage,
 } from "../lib/revenuecatClient";
-import type { PurchasesPackage } from "react-native-purchases";
 
 type RootStackParamList = {
   Paywall: undefined;

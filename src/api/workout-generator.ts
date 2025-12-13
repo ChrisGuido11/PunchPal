@@ -96,7 +96,7 @@ BOXING NOTATION (Standard):
 1 = Jab, 2 = Cross, 3 = Lead Hook, 4 = Rear Hook, 5 = Lead Uppercut, 6 = Rear Uppercut
 
 SKILL LEVEL: ${boxingLevel.toUpperCase()}
-WORKOUT TYPE: ${workingoutType.toUpperCase()} - ${typeGuidance}
+WORKOUT TYPE: ${workoutType.toUpperCase()} - ${typeGuidance}
 
 TRAINING PHILOSOPHY FOR THIS LEVEL:
 ${guidelines.focus}

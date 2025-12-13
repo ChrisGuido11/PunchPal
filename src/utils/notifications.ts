@@ -1,4 +1,5 @@
 import * as Notifications from "expo-notifications";
+import { SchedulableTriggerInputTypes } from "expo-notifications";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const NOTIFICATION_KEY = "punchpal-notifications-scheduled";
@@ -22,6 +23,7 @@ export async function ensureDailyReminder(): Promise<boolean> {
         body: "Keep your streak alive. Knock out a round today!",
       },
       trigger: {
+        type: SchedulableTriggerInputTypes.CALENDAR,
         hour: 9,
         minute: 0,
         repeats: true,
