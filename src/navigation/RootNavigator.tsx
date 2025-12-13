@@ -8,6 +8,7 @@ import OnboardingScreen from "../screens/OnboardingScreen";
 import HomeScreen from "../screens/HomeScreen";
 import ProfileScreen from "../screens/ProfileScreen";
 import TimerScreen from "../screens/TimerScreen";
+import PaywallScreen from "../screens/PaywallScreen";
 // import WorkoutLibraryScreen from "../screens/WorkoutLibraryScreen"; // TODO: enable library later
 
 export type RootStackParamList = {
@@ -15,6 +16,7 @@ export type RootStackParamList = {
   Onboarding: undefined;
   MainTabs: undefined;
   Timer: undefined;
+  Paywall: undefined;
   // Library: undefined;
 };
 
@@ -91,6 +93,14 @@ export default function RootNavigator() {
         options={{
           animation: "slide_from_bottom",
           presentation: "card",
+        }}
+      />
+      <Stack.Screen
+        name="Paywall"
+        component={PaywallScreen}
+        options={{
+          animation: "slide_from_bottom",
+          presentation: "modal",
         }}
       />
       {/* Library screen hidden for now */}
