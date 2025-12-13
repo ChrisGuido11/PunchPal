@@ -104,26 +104,6 @@ export default function HomeScreen({ navigation }: Props) {
         </View>
         {isGenerating && <PulsingEnergyLoader />}
 
-        {__DEV__ && !isGenerating && boxingLevel ? (
-          <View className="px-6 mb-4">
-            <Pressable onPress={handleRegenerate} className="active:opacity-80">
-              <LinearGradient
-                colors={["#B91C1C", "#DC2626"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 }}
-              >
-                <Text className="text-white text-center text-lg font-bold">
-                  Dev: Generate Fresh Workout
-                </Text>
-                <Text className="text-gray-200 text-center text-xs mt-1">
-                  Visible in dev only; paywall/daily limit TBD
-                </Text>
-              </LinearGradient>
-            </Pressable>
-          </View>
-        ) : null}
-
         {error ? (
           <View className="mx-6 mb-6 bg-boxing-red/20 border border-boxing-red rounded-2xl p-4">
             <Text className="text-boxing-red text-center">{error}</Text>
@@ -131,10 +111,32 @@ export default function HomeScreen({ navigation }: Props) {
         ) : null}
 
         {!isGenerating && currentWorkout ? (
-          <WorkoutCard
-            workout={currentWorkout}
-            onStartTraining={handleStartTraining}
-          />
+          <>
+            <WorkoutCard
+              workout={currentWorkout}
+              onStartTraining={handleStartTraining}
+            />
+
+            {__DEV__ && !isGenerating && boxingLevel ? (
+              <View className="px-6 mt-4">
+                <Pressable onPress={handleRegenerate} className="active:opacity-80">
+                  <LinearGradient
+                    colors={["#B91C1C", "#DC2626"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                    style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 }}
+                  >
+                    <Text className="text-white text-center text-lg font-bold">
+                      💎 Get Fresh Workout
+                    </Text>
+                    <Text className="text-gray-200 text-center text-xs mt-1">
+                      Premium feature • 1 per day
+                    </Text>
+                  </LinearGradient>
+                </Pressable>
+              </View>
+            ) : null}
+          </>
         ) : null}
       </ScrollView>
     </LinearGradient>
