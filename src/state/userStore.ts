@@ -27,7 +27,7 @@ export const useUserStore = create<UserState>()(
       setHasCompletedOnboarding: (completed) =>
         set({ hasCompletedOnboarding: completed }),
 
-      setBoxingLevel: (level) => set({ boxingLevel: level }),
+      setBoxingLevel: (level) => set({ boxingLevel: level, currentWorkout: null }),
 
       setCurrentWorkout: (workout) => set({ currentWorkout: workout }),
 

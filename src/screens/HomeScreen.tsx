@@ -28,7 +28,7 @@ export default function HomeScreen({ navigation }: Props) {
     if (!currentWorkout && boxingLevel) {
       loadWorkout();
     }
-  }, []);
+  }, [currentWorkout, boxingLevel]);
 
   const loadWorkout = async () => {
     if (!boxingLevel) return;
