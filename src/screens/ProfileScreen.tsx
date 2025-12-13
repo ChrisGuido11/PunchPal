@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { useUserStore } from "../state/userStore";
 import { BoxingLevel } from "../types/workout";
+import { ACHIEVEMENTS, getAchievementProgress } from "../utils/achievements";
 
 const levels: { value: BoxingLevel; title: string; description: string }[] = [
   {
@@ -30,6 +31,9 @@ export default function ProfileScreen() {
   const setBoxingLevel = useUserStore((s) => s.setBoxingLevel);
   const workoutHistory = useUserStore((s) => s.workoutHistory);
   const clearWorkoutHistory = useUserStore((s) => s.clearWorkoutHistory);
+  const currentStreak = useUserStore((s) => s.currentStreak);
+  const longestStreak = useUserStore((s) => s.longestStreak);
+  const unlockedAchievements = useUserStore((s) => s.unlockedAchievements);
 
   const [isEditingLevel, setIsEditingLevel] = useState(false);
 
@@ -158,6 +162,47 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Streaks Section */}
+        <View className="px-6 mb-6">
+          <Text className="text-xl font-bold text-white mb-4">
+            Your Streak
+          </Text>
+          <View className="bg-gradient-to-r from-boxing-red/20 to-boxing-gold/20 border-2 border-boxing-gold rounded-2xl p-6">
+            <View className="flex-row items-center justify-between mb-4">
+              <View className="flex-1">
+                <Text className="text-gray-400 text-sm mb-1">Current Streak</Text>
+                <View className="flex-row items-end">
+                  <Text className="text-5xl font-black text-boxing-gold">
+                    {currentStreak}
+                  </Text>
+                  <Text className="text-2xl font-bold text-boxing-gold ml-2 mb-1">
+                    🔥
+                  </Text>
+                </View>
+                <Text className="text-gray-400 text-xs mt-1">
+                  {currentStreak === 0 ? "Start your streak today!" : 
+                   currentStreak === 1 ? "Keep going!" : 
+                   "days in a row"}
+                </Text>
+              </View>
+              <View className="items-end">
+                <Text className="text-gray-400 text-sm mb-1">Best Streak</Text>
+                <Text className="text-3xl font-black text-white">
+                  {longestStreak}
+                </Text>
+                <Text className="text-gray-400 text-xs mt-1">days</Text>
+              </View>
+            </View>
+            {currentStreak >= 3 && (
+              <View className="bg-black/30 rounded-xl p-3">
+                <Text className="text-center text-boxing-gold text-sm font-semibold">
+                  🎉 Amazing! Keep your streak alive by training daily!
+                </Text>
+              </View>
+            )}
+          </View>
+        </View>
+
         {/* Stats Section */}
         <View className="px-6 mb-6">
           <Text className="text-xl font-bold text-white mb-4">
@@ -186,6 +231,64 @@ export default function ProfileScreen() {
               </Text>
               <Text className="text-sm text-gray-400">Minutes</Text>
             </View>
+          </View>
+        </View>
+
+        {/* Achievements Section */}
+        <View className="px-6 mb-6">
+          <Text className="text-xl font-bold text-white mb-4">
+            Achievements
+          </Text>
+          <View className="space-y-3">
+            {ACHIEVEMENTS.slice(0, 6).map((achievement) => {
+              const isUnlocked = unlockedAchievements.includes(achievement.id);
+              const progress = getAchievementProgress(achievement.id, workoutHistory, currentStreak);
+              const progressPercent = Math.min((progress.current / progress.target) * 100, 100);
+
+              return (
+                <View
+                  key={achievement.id}
+                  className={`rounded-2xl p-4 border ${
+                    isUnlocked
+                      ? "bg-boxing-gold/10 border-boxing-gold"
+                      : "bg-boxing-cardBg border-boxing-cardBorder"
+                  }`}
+                >
+                  <View className="flex-row items-center mb-2">
+                    <Text className="text-4xl mr-3">{achievement.icon}</Text>
+                    <View className="flex-1">
+                      <Text className={`text-lg font-bold ${isUnlocked ? "text-white" : "text-gray-500"}`}>
+                        {achievement.title}
+                      </Text>
+                      <Text className={`text-sm ${isUnlocked ? "text-gray-300" : "text-gray-600"}`}>
+                        {achievement.description}
+                      </Text>
+                    </View>
+                    {isUnlocked && (
+                      <Text className="text-2xl">✓</Text>
+                    )}
+                    {achievement.isPremium && !isUnlocked && (
+                      <View className="bg-boxing-gold/20 px-2 py-1 rounded">
+                        <Text className="text-xs text-boxing-gold font-bold">PRO</Text>
+                      </View>
+                    )}
+                  </View>
+                  {!isUnlocked && (
+                    <View className="mt-2">
+                      <View className="h-2 bg-black/30 rounded-full overflow-hidden">
+                        <View 
+                          className="h-full bg-boxing-gold rounded-full"
+                          style={{ width: `${progressPercent}%` }}
+                        />
+                      </View>
+                      <Text className="text-xs text-gray-500 mt-1">
+                        {progress.current} / {progress.target}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              );
+            })}
           </View>
         </View>
 

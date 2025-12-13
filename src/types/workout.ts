@@ -23,3 +23,21 @@ export interface WorkoutHistory {
   duration: number;
   rounds: number;
 }
+
+export interface Achievement {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  unlockedAt?: Date;
+  isPremium?: boolean;
+}
+
+export interface UserStats {
+  currentStreak: number;
+  longestStreak: number;
+  lastWorkoutDate: string | null;
+  totalWorkouts: number;
+  totalRounds: number;
+  totalMinutes: number;
+}

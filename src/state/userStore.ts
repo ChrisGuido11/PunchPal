@@ -8,21 +8,80 @@ interface UserState {
   boxingLevel: BoxingLevel | null;
   currentWorkout: WorkoutPlan | null;
   workoutHistory: WorkoutHistory[];
+  lastWorkoutDate: string | null;
+  currentStreak: number;
+  longestStreak: number;
+  unlockedAchievements: string[];
 
   setHasCompletedOnboarding: (completed: boolean) => void;
   setBoxingLevel: (level: BoxingLevel) => void;
   setCurrentWorkout: (workout: WorkoutPlan | null) => void;
   addWorkoutToHistory: (workout: WorkoutHistory) => void;
   clearWorkoutHistory: () => void;
+  updateStreaks: () => void;
+  unlockAchievement: (achievementId: string) => void;
 }
+
+const calculateStreak = (workoutHistory: WorkoutHistory[]): { currentStreak: number; longestStreak: number } => {
+  if (workoutHistory.length === 0) return { currentStreak: 0, longestStreak: 0 };
+
+  const sortedDates = workoutHistory
+    .map(w => new Date(w.completedAt).toDateString())
+    .filter((date, index, self) => self.indexOf(date) === index)
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+
+  let currentStreak = 0;
+  let longestStreak = 0;
+  let tempStreak = 1;
+  const today = new Date().toDateString();
+  const yesterday = new Date(Date.now() - 86400000).toDateString();
+
+  // Calculate current streak
+  if (sortedDates[0] === today || sortedDates[0] === yesterday) {
+    currentStreak = 1;
+    for (let i = 1; i < sortedDates.length; i++) {
+      const prevDate = new Date(sortedDates[i - 1]);
+      const currDate = new Date(sortedDates[i]);
+      const diffDays = Math.floor((prevDate.getTime() - currDate.getTime()) / 86400000);
+      
+      if (diffDays === 1) {
+        currentStreak++;
+      } else {
+        break;
+      }
+    }
+  }
+
+  // Calculate longest streak
+  longestStreak = tempStreak;
+  for (let i = 1; i < sortedDates.length; i++) {
+    const prevDate = new Date(sortedDates[i - 1]);
+    const currDate = new Date(sortedDates[i]);
+    const diffDays = Math.floor((prevDate.getTime() - currDate.getTime()) / 86400000);
+    
+    if (diffDays === 1) {
+      tempStreak++;
+      longestStreak = Math.max(longestStreak, tempStreak);
+    } else {
+      tempStreak = 1;
+    }
+  }
+  longestStreak = Math.max(longestStreak, currentStreak);
+
+  return { currentStreak, longestStreak };
+};
 
 export const useUserStore = create<UserState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       hasCompletedOnboarding: false,
       boxingLevel: null,
       currentWorkout: null,
       workoutHistory: [],
+      lastWorkoutDate: null,
+      currentStreak: 0,
+      longestStreak: 0,
+      unlockedAchievements: [],
 
       setHasCompletedOnboarding: (completed) =>
         set({ hasCompletedOnboarding: completed }),
@@ -31,12 +90,44 @@ export const useUserStore = create<UserState>()(
 
       setCurrentWorkout: (workout) => set({ currentWorkout: workout }),
 
-      addWorkoutToHistory: (workout) =>
-        set((state) => ({
-          workoutHistory: [workout, ...state.workoutHistory],
-        })),
+      addWorkoutToHistory: (workout) => {
+        set((state) => {
+          const newHistory = [workout, ...state.workoutHistory];
+          const streaks = calculateStreak(newHistory);
+          return {
+            workoutHistory: newHistory,
+            lastWorkoutDate: new Date().toISOString(),
+            currentStreak: streaks.currentStreak,
+            longestStreak: streaks.longestStreak,
+          };
+        });
+      },
 
-      clearWorkoutHistory: () => set({ workoutHistory: [] }),
+      updateStreaks: () => {
+        const state = get();
+        const streaks = calculateStreak(state.workoutHistory);
+        set({
+          currentStreak: streaks.currentStreak,
+          longestStreak: streaks.longestStreak,
+        });
+      },
+
+      unlockAchievement: (achievementId) => {
+        set((state) => {
+          if (state.unlockedAchievements.includes(achievementId)) {
+            return state;
+          }
+          return {
+            unlockedAchievements: [...state.unlockedAchievements, achievementId],
+          };
+        });
+      },
+
+      clearWorkoutHistory: () => set({ 
+        workoutHistory: [],
+        currentStreak: 0,
+        lastWorkoutDate: null,
+      }),
     }),
     {
       name: "punchpal-user-store",

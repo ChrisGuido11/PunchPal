@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { useUserStore } from "../state/userStore";
+import { checkAchievements } from "../utils/achievements";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 type RootStackParamList = {
@@ -19,6 +20,11 @@ function TimerScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const currentWorkout = useUserStore((s) => s.currentWorkout);
   const addWorkoutToHistory = useUserStore((s) => s.addWorkoutToHistory);
+  const workoutHistory = useUserStore((s) => s.workoutHistory);
+  const currentStreak = useUserStore((s) => s.currentStreak);
+  const longestStreak = useUserStore((s) => s.longestStreak);
+  const unlockedAchievements = useUserStore((s) => s.unlockedAchievements);
+  const unlockAchievement = useUserStore((s) => s.unlockAchievement);
 
   const [currentRound, setCurrentRound] = useState(1);
   const [timeRemaining, setTimeRemaining] = useState(180);
@@ -39,9 +45,21 @@ function TimerScreen({ navigation }: Props) {
       duration: currentWorkout.duration,
       rounds: currentWorkout.rounds,
     });
+
+    // Check for new achievements
+    setTimeout(() => {
+      const newAchievements = checkAchievements(
+        workoutHistory,
+        currentStreak,
+        longestStreak,
+        unlockedAchievements
+      );
+      newAchievements.forEach(id => unlockAchievement(id));
+    }, 100);
+
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     navigation.navigate("Home");
-  }, [currentWorkout, addWorkoutToHistory, navigation]);
+  }, [currentWorkout, addWorkoutToHistory, navigation, workoutHistory, currentStreak, longestStreak, unlockedAchievements, unlockAchievement]);
 
   const nextRound = useCallback(() => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

@@ -20,11 +20,14 @@ export default function HomeScreen({ navigation }: Props) {
   const workoutHistory = useUserStore((s) => s.workoutHistory);
   const currentWorkout = useUserStore((s) => s.currentWorkout);
   const setCurrentWorkout = useUserStore((s) => s.setCurrentWorkout);
+  const currentStreak = useUserStore((s) => s.currentStreak);
+  const updateStreaks = useUserStore((s) => s.updateStreaks);
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    updateStreaks();
     if (!currentWorkout && boxingLevel) {
       loadWorkout();
     }
@@ -65,13 +68,27 @@ export default function HomeScreen({ navigation }: Props) {
           paddingBottom: insets.bottom + 20,
         }}
       >
-        <View className="px-6 mb-8">
-          <Text className="text-4xl font-black text-white mb-2">
-            Ready to Train?
-          </Text>
-          <Text className="text-lg text-gray-400">
-            Your personalized workout is ready
-          </Text>
+        <View className="px-6 mb-6">
+          <View className="flex-row items-center justify-between mb-4">
+            <View className="flex-1">
+              <Text className="text-4xl font-black text-white mb-2">
+                Ready to Train?
+              </Text>
+              <Text className="text-lg text-gray-400">
+                Your personalized workout is ready
+              </Text>
+            </View>
+            {currentStreak > 0 && (
+              <View className="bg-boxing-gold/20 border border-boxing-gold rounded-2xl px-4 py-3 items-center">
+                <Text className="text-3xl font-black text-boxing-gold">
+                  {currentStreak}
+                </Text>
+                <Text className="text-xs text-boxing-gold font-bold">
+                  🔥 STREAK
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
 
         {isGenerating && <PulsingEnergyLoader />}
