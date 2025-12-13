@@ -56,6 +56,40 @@ function TimerScreen({ navigation }: Props) {
 
   const combo = useMemo(() => combos[currentComboIndex], [combos, currentComboIndex]);
 
+  const buildTips = useCallback((description?: string): string[] => {
+    if (!description) return [];
+    // Split on punctuation to capture concise guidance points.
+    const parts = description
+      .split(/[.;\n]/)
+      .map((p) => p.trim())
+      .filter((p) => p.length > 6)
+      .slice(0, 4);
+
+    const rephrase = (text: string) => {
+      const lowered = text.toLowerCase();
+      if (lowered.startsWith("focus on")) return text.replace(/focus on/i, "focus on");
+      if (lowered.startsWith("keep")) return text.replace(/keep/i, "keep");
+      if (lowered.startsWith("stay")) return text.replace(/stay/i, "stay");
+      if (lowered.startsWith("pivot")) return `pivot and stay balanced`; // small rephrase
+      // Generic supportive prefix to avoid verbatim description.
+      return `remember: ${text}`;
+    };
+
+    const tips = parts.map((p) => {
+      const trimmed = p.replace(/\s+/g, " ").trim();
+      const noTrailing = trimmed.replace(/[.]+$/, "");
+      return rephrase(noTrailing);
+    });
+
+    const uniqueTips: string[] = [];
+    for (const tip of tips) {
+      if (tip && !uniqueTips.includes(tip)) uniqueTips.push(tip);
+      if (uniqueTips.length === 2) break;
+    }
+
+    return uniqueTips;
+  }, []);
+
   const speak = useCallback((text: string) => {
     Speech.speak(text, {
       language: "en-US",
@@ -70,7 +104,7 @@ function TimerScreen({ navigation }: Props) {
   }, []);
 
   const scheduleComboCallouts = useCallback(
-    (comboName?: string, comboNotation?: string) => {
+    (comboName?: string, comboNotation?: string, comboDescription?: string) => {
       if (!comboName || !comboNotation) return;
 
       clearComboCallouts();
@@ -78,16 +112,23 @@ function TimerScreen({ navigation }: Props) {
       lastBeepSecondRef.current = null;
 
       const numbers = comboNotation.replace(/-/g, " ");
+      const tips = buildTips(comboDescription);
+      const tip1 = tips[0];
+      const tip2 = tips[1];
 
       speak(comboName);
       const t1 = setTimeout(() => speak(numbers), 0);
+      const tTip1 = tip1 ? setTimeout(() => speak(tip1), 2500) : null;
       const t2 = setTimeout(() => speak(numbers), 5000);
+      const tTip2 = tip2 ? setTimeout(() => speak(tip2), 8000) : null;
       const t3 = setTimeout(() => speak(numbers), 10000);
       const t4 = setTimeout(() => speak("keep going"), 15000);
 
-      comboCalloutTimeoutsRef.current = [t1, t2, t3, t4];
+      comboCalloutTimeoutsRef.current = [t1, t2, t3, t4].concat(
+        [tTip1, tTip2].filter((v): v is NodeJS.Timeout => Boolean(v))
+      );
     },
-    [clearComboCallouts, speak]
+    [buildTips, clearComboCallouts, speak]
   );
 
   const playBeep = useCallback(async () => {
@@ -224,7 +265,7 @@ function TimerScreen({ navigation }: Props) {
     const comboKey = `${currentRound}-${combo.notation}-${combo.name}`;
     if (lastComboKeyRef.current !== comboKey) {
       lastComboKeyRef.current = comboKey;
-      scheduleComboCallouts(combo.name, combo.notation);
+      scheduleComboCallouts(combo.name, combo.notation, combo.description);
     }
   }, [clearComboCallouts, combo, currentRound, isPaused, isRunning, phase, scheduleComboCallouts]);
 
