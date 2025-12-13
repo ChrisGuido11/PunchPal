@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, ScrollView, ActivityIndicator } from "react-native";
+import { View, Text, ScrollView } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useUserStore } from "../state/userStore";
 import { generateWorkout } from "../api/workout-generator";
 import WorkoutCard from "../components/WorkoutCard";
+import PulsingEnergyLoader from "../components/PulsingEnergyLoader";
 
 type RootStackParamList = {
   Splash: undefined;
@@ -76,21 +77,7 @@ export default function HomeScreen({ navigation }: Props) {
           </Text>
         </View>
 
-        {isGenerating && (
-          <View className="items-center justify-center py-20">
-            <View className="items-center justify-center">
-              <Text className="text-8xl mb-4">🥊</Text>
-              <ActivityIndicator size="large" color="#F59E0B" />
-            </View>
-
-            <Text className="text-2xl font-bold text-white mt-8 mb-2">
-              Generating Workout...
-            </Text>
-            <Text className="text-base text-gray-400 text-center px-8">
-              Your coach is preparing a personalized training plan
-            </Text>
-          </View>
-        )}
+        {isGenerating && <PulsingEnergyLoader />}
 
         {error && (
           <View className="mx-6 mb-6 bg-boxing-red/20 border border-boxing-red rounded-2xl p-4">
