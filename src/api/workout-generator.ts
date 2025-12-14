@@ -272,7 +272,40 @@ Return ONLY valid JSON in this exact format:
       return getRandomFallbackWorkout(boxingLevel);
     }
 
-    const workoutData = JSON.parse(content);
+    // Clean the response - extract JSON from potential markdown code blocks
+    let cleanContent = content.trim();
+
+    // Remove markdown code block markers if present
+    if (cleanContent.startsWith("```json")) {
+      cleanContent = cleanContent.slice(7);
+    } else if (cleanContent.startsWith("```")) {
+      cleanContent = cleanContent.slice(3);
+    }
+    if (cleanContent.endsWith("```")) {
+      cleanContent = cleanContent.slice(0, -3);
+    }
+    cleanContent = cleanContent.trim();
+
+    // Try to extract JSON object if there's extra text
+    const jsonMatch = cleanContent.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      cleanContent = jsonMatch[0];
+    }
+
+    // Fix common JSON issues from AI responses
+    // Fix patterns like "reps": 10 (each side) -> "reps": "10 (each side)"
+    cleanContent = cleanContent.replace(
+      /:\s*(\d+)\s*\(([^)]+)\)/g,
+      ': "$1 ($2)"'
+    );
+
+    let workoutData;
+    try {
+      workoutData = JSON.parse(cleanContent);
+    } catch (parseError) {
+      console.error("Failed to parse workout JSON, using fallback:", parseError);
+      return getRandomFallbackWorkout(boxingLevel);
+    }
 
     const workout: WorkoutPlan = {
       id: `workout-${Date.now()}`,
