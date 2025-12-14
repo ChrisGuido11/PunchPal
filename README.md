@@ -80,7 +80,7 @@ PunchPal solves the problem of expensive personal coaching by using AI to genera
 - **Database**: Supabase (PostgreSQL) for cloud sync and analytics
 - **Styling**: NativeWind (TailwindCSS for React Native)
 - **Animations**: react-native-reanimated v3
-- **AI**: Grok 3 Fast (via OpenAI-compatible API)
+- **AI**: Grok 4 Fast (via OpenAI-compatible API)
 - **Authentication**: Supabase Anonymous Auth
 - **Package Manager**: Bun
 

@@ -13,6 +13,7 @@ module.exports = defineConfig([
       "patches/*",
       "bun.lock",
       "eslint.config.js",
+      ".supabase-edge-functions/**/*",
     ],
     settings: {
       "import/resolver": {

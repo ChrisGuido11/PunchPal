@@ -100,13 +100,6 @@ export async function generateWorkout(
   workoutHistory: number,
   workoutType: WorkoutType = "power"
 ): Promise<WorkoutPlan> {
-  // Check if API key is available first
-  const apiKey = process.env.EXPO_PUBLIC_VIBECODE_GROK_API_KEY;
-  if (!apiKey) {
-    console.log("Grok API key not found, using fallback workout");
-    return getRandomFallbackWorkout(boxingLevel);
-  }
-
   const grokClient = getGrokClient();
 
   const levelGuidelines = {
@@ -147,7 +140,6 @@ export async function generateWorkout(
 
   const guidelines = levelGuidelines[boxingLevel];
 
-  // Type-specific overrides
   let typeGuidance = "";
   let typeDuration = "";
   let typeRounds = "";
@@ -253,13 +245,13 @@ Return ONLY valid JSON in this exact format:
 
   try {
     const response = await grokClient.chat.completions.create({
-      model: "grok-3-fast-latest",
+      model: "grok-4-fast-non-reasoning",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       temperature: 0.8,
-      response_format: { type: "json_object" },
+      max_tokens: 1500,
     });
 
     const content = response.choices[0]?.message?.content;
@@ -288,3 +280,4 @@ Return ONLY valid JSON in this exact format:
     return getRandomFallbackWorkout(boxingLevel);
   }
 }
+

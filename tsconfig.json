@@ -12,6 +12,7 @@
     "node_modules",
     "backend/node_modules",
     "backend/generated",
-    ".expo"
+    ".expo",
+    "supabase/**"
   ]
 }
