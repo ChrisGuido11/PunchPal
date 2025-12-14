@@ -9,14 +9,24 @@ grok-3-fast-latest
 grok-3-mini-latest
 */
 import OpenAI from "openai";
+import Constants from "expo-constants";
 
 export const getGrokClient = () => {
-  const apiKey = process.env.EXPO_PUBLIC_VIBECODE_GROK_API_KEY;
+  // Check multiple possible sources for the API key
+  // 1. EAS secrets (for production/TestFlight builds)
+  // 2. expo-constants extra (for EAS builds)
+  // 3. EXPO_PUBLIC_ env var (for development)
+  const apiKey =
+    Constants.expoConfig?.extra?.grokApiKey ||
+    process.env.GROK_API_KEY ||
+    process.env.EXPO_PUBLIC_VIBECODE_GROK_API_KEY;
+
   if (!apiKey) {
     console.warn("Grok API key not found in environment variables");
   }
+
   return new OpenAI({
-    apiKey: apiKey,
+    apiKey: apiKey || "",
     baseURL: "https://api.x.ai/v1",
   });
 };

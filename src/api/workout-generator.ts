@@ -1,5 +1,6 @@
 import { getGrokClient } from "./grok";
 import { BoxingLevel, WorkoutPlan, WorkoutType } from "../types/workout";
+import Constants from "expo-constants";
 
 // Fallback workouts for when API fails
 const fallbackWorkouts: Record<BoxingLevel, WorkoutPlan[]> = {
@@ -244,6 +245,17 @@ Return ONLY valid JSON in this exact format:
   }.`;
 
   try {
+    // Check if API key is available before making the request
+    const apiKeyAvailable =
+      Constants.expoConfig?.extra?.grokApiKey ||
+      process.env.GROK_API_KEY ||
+      process.env.EXPO_PUBLIC_VIBECODE_GROK_API_KEY;
+
+    if (!apiKeyAvailable) {
+      console.log("Grok API key not available, using fallback workout");
+      return getRandomFallbackWorkout(boxingLevel);
+    }
+
     const response = await grokClient.chat.completions.create({
       model: "grok-4-fast-non-reasoning",
       messages: [
