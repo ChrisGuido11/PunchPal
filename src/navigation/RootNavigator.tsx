@@ -34,9 +34,9 @@ function MainTabNavigator() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: "#0F0F0F",
-          borderTopColor: "#2A2A2A",
-          borderTopWidth: 1,
+          backgroundColor: "#000000",
+          borderTopColor: "#DC2626",
+          borderTopWidth: 2,
           height: 60 + insets.bottom,
           paddingBottom: insets.bottom,
           paddingTop: 8,
@@ -45,8 +45,10 @@ function MainTabNavigator() {
         tabBarInactiveTintColor: "#6B7280",
         tabBarLabelStyle: {
           fontSize: 12,
-          fontWeight: "600",
+          fontWeight: "700",
           marginTop: -4,
+          textTransform: "uppercase",
+          letterSpacing: 0.5,
         },
       }}
     >
@@ -79,7 +81,7 @@ export default function RootNavigator() {
       screenOptions={{
         headerShown: false,
         animation: "fade",
-        contentStyle: { backgroundColor: "#0F0F0F" },
+        contentStyle: { backgroundColor: "#000000" },
       }}
     >
       <Stack.Screen name="Splash" component={SplashScreen} />

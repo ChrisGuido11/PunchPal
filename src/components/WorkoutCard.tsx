@@ -19,7 +19,7 @@ export default function WorkoutCard({
   };
 
   const difficultyColor = {
-    beginner: "text-green-400",
+    beginner: "text-boxing-gold",
     intermediate: "text-boxing-gold",
     advanced: "text-boxing-red",
   }[workout.difficulty];
@@ -35,11 +35,11 @@ export default function WorkoutCard({
             right: -4,
             bottom: -4,
             borderRadius: 24,
-            opacity: 0.4,
+            opacity: 0.3,
           }}
         >
           <LinearGradient
-            colors={["#F59E0B", "#DC2626"]}
+            colors={["#DC2626", "#D4AF37"]}
             style={{
               flex: 1,
               borderRadius: 24,
@@ -49,7 +49,7 @@ export default function WorkoutCard({
           />
         </View>
 
-        <View className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-3xl overflow-hidden">
+        <View className="bg-boxing-cardBg border-2 border-boxing-red rounded-3xl overflow-hidden">
           <View className="p-6">
             <View className="flex-row items-center justify-between mb-4">
               <View className="flex-1">
@@ -60,7 +60,10 @@ export default function WorkoutCard({
                   {workout.difficulty.toUpperCase()}
                 </Text>
               </View>
-              <Text className="text-5xl">🥊</Text>
+              {/* Minimalist boxing icon */}
+              <View className="w-14 h-14 rounded-full border-3 border-boxing-red items-center justify-center">
+                <View className="w-9 h-9 rounded-full bg-boxing-red opacity-80" />
+              </View>
             </View>
 
             <View className="flex-row space-x-4 mb-6">

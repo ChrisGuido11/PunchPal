@@ -86,17 +86,21 @@ PunchPal solves the problem of expensive personal coaching by using AI to genera
 
 ## Theme Colors
 
-- Dark Background: `#0F0F0F`
+- Pure Black: `#000000`
+- Dark Background: `#0A0A0A`
 - Card Background: `#1A1A1A`
 - Card Border: `#2A2A2A`
 - Boxing Red: `#DC2626`
-- Boxing Gold: `#F59E0B`
+- Dark Red: `#B91C1C`
+- Accent Red: `#FF0000`
+- Boxing Gold: `#D4AF37`
+- Light Gold: `#F4E5C2`
 
 ## Key Design Decisions
 
-1. **Dark Theme**: Provides energy and focus for workout sessions
-2. **Red & Gold**: Boxing-inspired color palette that conveys power and achievement
-3. **Glassmorphic Cards**: Modern, premium feel with depth and hierarchy
+1. **Dark Theme**: Pure black background provides maximum energy and focus for workout sessions
+2. **Red & Black with Gold Accents**: Bold boxing-inspired color palette that conveys power, intensity, and achievement
+3. **Minimalist Icons**: Modern icon design replacing emoji-style graphics for a sleek, professional look
 4. **Smooth Animations**: All interactions use react-native-reanimated for 60fps performance
 5. **Haptic Feedback**: Physical feedback on all interactions for better UX
 6. **Safe Area Handling**: Proper insets for all device types

@@ -70,7 +70,7 @@ export default function PulsingEnergyLoader() {
           {/* Ring 3 - Outermost (red) */}
           <Animated.View style={[styles.ring, createRingStyle(pulse3)]}>
             <LinearGradient
-              colors={["#FF4444", "#FF6666"]}
+              colors={["#DC2626", "#FF0000"]}
               style={styles.ringGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -80,7 +80,7 @@ export default function PulsingEnergyLoader() {
           {/* Ring 2 - Middle (red-gold blend) */}
           <Animated.View style={[styles.ring, createRingStyle(pulse2)]}>
             <LinearGradient
-              colors={["#FF4444", "#FFB344"]}
+              colors={["#DC2626", "#D4AF37"]}
               style={styles.ringGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -90,7 +90,7 @@ export default function PulsingEnergyLoader() {
           {/* Ring 1 - Innermost (gold) */}
           <Animated.View style={[styles.ring, createRingStyle(pulse1)]}>
             <LinearGradient
-              colors={["#FFD700", "#FFA500"]}
+              colors={["#D4AF37", "#F4E5C2"]}
               style={styles.ringGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -100,7 +100,7 @@ export default function PulsingEnergyLoader() {
           {/* Center core - static glow */}
           <View style={styles.centerCore}>
             <LinearGradient
-              colors={["#FFD700", "#FF4444"]}
+              colors={["#D4AF37", "#DC2626"]}
               style={styles.coreGradient}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -144,9 +144,9 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     overflow: "hidden",
-    shadowColor: "#FFD700",
+    shadowColor: "#D4AF37",
     shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
+    shadowOpacity: 0.9,
     shadowRadius: 20,
     elevation: 10,
   },

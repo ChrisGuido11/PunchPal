@@ -47,7 +47,7 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
   };
 
   return (
-    <LinearGradient colors={["#0F0F0F", "#1A1A1A"]} style={{ flex: 1 }}>
+    <LinearGradient colors={["#000000", "#1A0000"]} style={{ flex: 1 }}>
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
@@ -60,7 +60,7 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
             <Text className="text-boxing-gold text-lg font-semibold">← Back</Text>
           </Pressable>
           <Text className="text-4xl font-black text-white mb-2">Workout Library</Text>
-          <Text className="text-gray-400 text-base">
+          <Text className="text-boxing-gold text-base">
             {activeTab === "favorites" ? "Your favorite workouts" : "Recently completed"}
           </Text>
         </View>
@@ -84,11 +84,11 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
                 style={{ borderRadius: 12, paddingVertical: 12 }}
               >
                 <Text
-                  className={`text-center font-bold ${
+                  className={`text-center font-bold uppercase tracking-wider ${
                     activeTab === tab ? "text-white" : "text-gray-400"
                   }`}
                 >
-                  {tab === "favorites" ? "❤️ Favorites" : "🕐 Recent"}
+                  {tab === "favorites" ? "Favorites" : "Recent"}
                 </Text>
               </LinearGradient>
             </Pressable>
@@ -118,19 +118,19 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
                 style={{ borderRadius: 20, paddingVertical: 10, paddingHorizontal: 16 }}
               >
                 <Text
-                  className={`font-semibold ${
+                  className={`font-semibold uppercase tracking-wider ${
                     selectedType === type ? "text-white" : "text-gray-400"
                   }`}
                 >
                   {type === "all"
                     ? "All"
                     : type === "quick"
-                      ? "⚡ Quick"
+                      ? "Quick"
                       : type === "power"
-                        ? "💥 Power"
+                        ? "Power"
                         : type === "endurance"
-                          ? "🏃 Endurance"
-                          : "🎯 Technique"}
+                          ? "Endurance"
+                          : "Technique"}
                 </Text>
               </LinearGradient>
             </Pressable>
@@ -150,7 +150,7 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
           <View className="px-6 space-y-4">
             {filteredWorkouts.map((workout) => {
               const difficultyColor = {
-                beginner: "text-green-400",
+                beginner: "text-boxing-gold",
                 intermediate: "text-boxing-gold",
                 advanced: "text-boxing-red",
               }[workout.difficulty];
@@ -165,7 +165,7 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
                     colors={["#1A1A1A", "#2A2A2A"]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
-                    style={{ borderRadius: 16, padding: 16, borderWidth: 1, borderColor: "#3D3D3D" }}
+                    style={{ borderRadius: 16, padding: 16, borderWidth: 2, borderColor: "#DC2626" }}
                   >
                     <View className="flex-row items-start justify-between mb-3">
                       <View className="flex-1">
@@ -175,23 +175,28 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
                             {workout.difficulty.toUpperCase()}
                           </Text>
                           <Text className="text-xs text-gray-500">•</Text>
-                          <Text className="text-xs text-gray-400">
+                          <Text className="text-xs text-boxing-gold uppercase tracking-wider">
                             {workout.type === "quick"
-                              ? "⚡ Quick"
+                              ? "Quick"
                               : workout.type === "power"
-                                ? "💥 Power"
+                                ? "Power"
                                 : workout.type === "endurance"
-                                  ? "🏃 Endurance"
-                                  : "🎯 Technique"}
+                                  ? "Endurance"
+                                  : "Technique"}
                           </Text>
                         </View>
                       </View>
                       <Pressable
                         onPress={() => handleFavorite(workout.id)}
                         hitSlop={8}
+                        className={`w-8 h-8 rounded-full items-center justify-center ${
+                          workout.isFavorite ? "bg-boxing-red" : "bg-gray-700"
+                        }`}
                       >
-                        <Text className="text-2xl">
-                          {workout.isFavorite ? "❤️" : "🤍"}
+                        <Text className={`text-sm font-black ${
+                          workout.isFavorite ? "text-white" : "text-gray-500"
+                        }`}>
+                          ♥
                         </Text>
                       </Pressable>
                     </View>
@@ -211,8 +216,8 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
                       </View>
                     </View>
 
-                    <Pressable className="bg-boxing-gold/10 rounded-lg py-2 px-3">
-                      <Text className="text-boxing-gold text-center font-bold">
+                    <Pressable className="bg-boxing-red/10 border border-boxing-red rounded-lg py-2 px-3">
+                      <Text className="text-boxing-red text-center font-bold uppercase tracking-wider">
                         Start Workout
                       </Text>
                     </Pressable>
@@ -224,9 +229,11 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
         )}
 
         {/* Premium Custom Builder Hint */}
-        <View className="mx-6 mt-8 bg-boxing-gold/10 border border-boxing-gold rounded-2xl p-4">
+        <View className="mx-6 mt-8 bg-boxing-red/10 border-2 border-boxing-red rounded-2xl p-4">
           <View className="flex-row items-start space-x-3">
-            <Text className="text-2xl">💎</Text>
+            <View className="w-10 h-10 rounded-full border-2 border-boxing-gold items-center justify-center">
+              <Text className="text-boxing-gold font-black text-xl">+</Text>
+            </View>
             <View className="flex-1">
               <Text className="text-boxing-gold font-bold mb-1">Custom Workout Builder</Text>
               <Text className="text-gray-300 text-sm">

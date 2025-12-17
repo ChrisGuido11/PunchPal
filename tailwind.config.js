@@ -14,10 +14,14 @@ module.exports = {
       colors: {
         boxing: {
           red: "#DC2626",
-          gold: "#F59E0B",
-          darkBg: "#0F0F0F",
+          darkRed: "#B91C1C",
+          gold: "#D4AF37",
+          lightGold: "#F4E5C2",
+          black: "#000000",
+          darkBg: "#0A0A0A",
           cardBg: "#1A1A1A",
           cardBorder: "#2A2A2A",
+          accentRed: "#FF0000",
         },
       },
       fontSize: {

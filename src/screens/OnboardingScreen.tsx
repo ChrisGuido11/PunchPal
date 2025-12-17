@@ -50,7 +50,7 @@ export default function OnboardingScreen({ navigation }: Props) {
 
   return (
     <LinearGradient
-      colors={["#0F0F0F", "#1A1A1A"]}
+      colors={["#000000", "#1A0000"]}
       style={{ flex: 1 }}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
@@ -63,7 +63,7 @@ export default function OnboardingScreen({ navigation }: Props) {
           <Text className="text-4xl font-black text-white mb-3">
             Welcome to PunchPal
           </Text>
-          <Text className="text-lg text-gray-400">
+          <Text className="text-lg text-boxing-gold">
             Select your boxing experience level to get personalized workouts
           </Text>
         </View>
@@ -81,7 +81,7 @@ export default function OnboardingScreen({ navigation }: Props) {
               <View
                 className={`bg-boxing-cardBg border-2 rounded-2xl p-6 ${
                   selectedLevel === level.value
-                    ? "border-boxing-gold"
+                    ? "border-boxing-red"
                     : "border-boxing-cardBorder"
                 }`}
               >
@@ -90,7 +90,7 @@ export default function OnboardingScreen({ navigation }: Props) {
                     {level.title}
                   </Text>
                   {selectedLevel === level.value && (
-                    <Text className="text-2xl text-boxing-gold">✓</Text>
+                    <Text className="text-2xl text-boxing-red font-black">✓</Text>
                   )}
                 </View>
                 <Text className="text-base text-gray-400">

@@ -372,7 +372,7 @@ function TimerScreen({ navigation }: Props) {
 
   if (!currentWorkout || combos.length === 0) {
     return (
-      <LinearGradient colors={["#0F0F0F", "#1A1A1A"]} style={{ flex: 1 }}>
+      <LinearGradient colors={["#000000", "#1A0000"]} style={{ flex: 1 }}>
         <View className="flex-1 items-center justify-center">
           <Text className="text-white text-xl">No workout selected</Text>
         </View>
@@ -385,86 +385,111 @@ function TimerScreen({ navigation }: Props) {
   const secs = displaySeconds % 60;
 
   return (
-    <LinearGradient colors={["#0F0F0F", "#1A1A1A"]} style={{ flex: 1 }}>
-      <ScrollView
-        className="flex-1"
-        contentContainerStyle={{
-          paddingTop: insets.top + 20,
-          paddingBottom: insets.bottom + 20,
-        }}
-      >
-        <View className="px-6">
-          <View className="flex-row items-center justify-between mb-8">
-            <Pressable onPress={endWorkout}>
-              <Text className="text-boxing-gold text-lg font-semibold">Back</Text>
-            </Pressable>
-            <View>
-              <Text className="text-gray-400 text-sm text-right">Round</Text>
-              <Text className="text-white text-2xl font-bold text-right">
-                {currentRound} / {totalRounds}
-              </Text>
-            </View>
-          </View>
-
-          <View className="items-center mb-6">
-            <Text className="text-8xl font-black text-white tracking-tight mb-2">
-              {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
-            </Text>
-            <Text className="text-xl text-gray-400">
-              {isPaused
-                ? "Paused"
-                : phase === "rest"
-                  ? "Rest"
-                  : isRunning
-                    ? "Training"
-                    : "Ready"}
-            </Text>
-          </View>
-
-          {phase === "rest" && (
-            <View className="bg-boxing-gold/15 border border-boxing-gold rounded-2xl p-4 mb-6">
-              <Text className="text-boxing-gold text-center font-bold text-base">
-                Rest - Next round starts soon
-              </Text>
-            </View>
-          )}
-
-          <View className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-3xl p-8 mb-8">
-            <Text className="text-gray-400 text-sm mb-2">Current Combo</Text>
-            <Text className="text-3xl font-black text-white mb-3">{combo?.name ?? "---"}</Text>
-            <Text className="text-4xl font-bold text-boxing-gold mb-4">{combo?.notation ?? "---"}</Text>
-            <Text className="text-base text-gray-300 mb-4">{combo?.description ?? ""}</Text>
-
-            <Pressable onPress={watchLesson} className="active:opacity-70 mt-2">
-              <View className="bg-boxing-gold/10 border border-boxing-gold rounded-xl py-3 px-4 flex-row items-center justify-center">
-                <Text className="text-boxing-gold text-base font-bold">📺 Watch Lesson on YouTube</Text>
-              </View>
-            </Pressable>
-          </View>
-
-          <View className="space-y-4">
-            <Pressable onPress={toggleRunning} className="active:opacity-80">
-              <LinearGradient
-                colors={["#DC2626", "#B91C1C"]}
-                style={{ paddingVertical: 20, paddingHorizontal: 32, borderRadius: 16 }}
-              >
-                <Text className="text-white text-2xl font-bold text-center">
-                  {!isRunning ? "Start" : isPaused ? "Resume" : "Pause"}
-                </Text>
-              </LinearGradient>
-            </Pressable>
-
-            {isRunning && (
-              <Pressable
-                onPress={endWorkout}
-                className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-2xl py-5 active:opacity-80"
-              >
-                <Text className="text-white text-xl font-bold text-center">End Workout</Text>
-              </Pressable>
-            )}
-          </View>
+    <LinearGradient colors={["#000000", "#000000"]} style={{ flex: 1 }}>
+      <View className="flex-1" style={{ paddingTop: insets.top }}>
+        {/* Header */}
+        <View className="px-6 py-4">
+          <Text className="text-gray-500 text-sm">Round {currentRound} / {totalRounds}</Text>
         </View>
-      </ScrollView>
+
+        {/* Main Timer Area */}
+        <View className="flex-1 items-center justify-center px-6">
+          {/* Phase Indicator */}
+          <View className="mb-8">
+            <View className="bg-boxing-red/20 px-6 py-2 rounded-full">
+              <Text className="text-boxing-red text-base font-bold uppercase tracking-widest">
+                {phase === "rest" ? "REST" : "WORK"}
+              </Text>
+            </View>
+          </View>
+
+          {/* Large Timer */}
+          <Text className="text-[120px] font-black text-white tracking-tight leading-none mb-12">
+            {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
+          </Text>
+
+          {/* Exercise Card */}
+          <View className="w-full bg-[#1A1A1A] rounded-2xl p-6 mb-8">
+            <Text className="text-white text-2xl font-bold mb-2">{combo?.name ?? "---"}</Text>
+            <Text className="text-boxing-red text-lg font-bold mb-3">{combo?.notation ?? "---"}</Text>
+            <Text className="text-gray-400 text-sm leading-5 mb-3">
+              {combo?.description ?? ""}
+            </Text>
+            <Text className="text-gray-500 text-sm">
+              Next: {combos[(currentComboIndex + 1) % combos.length]?.name ?? "---"}
+            </Text>
+          </View>
+
+          {/* Pause Button */}
+          <Pressable 
+            onPress={toggleRunning} 
+            className="active:opacity-80"
+            style={{ width: 80, height: 80 }}
+          >
+            <View className="w-20 h-20 bg-boxing-red rounded-full items-center justify-center">
+              <View className="flex-row space-x-1">
+                {isPaused || !isRunning ? (
+                  <View className="w-0 h-0 border-l-[20px] border-l-white border-t-[12px] border-t-transparent border-b-[12px] border-b-transparent ml-1" />
+                ) : (
+                  <>
+                    <View className="w-2 h-8 bg-white rounded-sm" />
+                    <View className="w-2 h-8 bg-white rounded-sm" />
+                  </>
+                )}
+              </View>
+            </View>
+          </Pressable>
+        </View>
+
+        {/* Pause Modal Overlay */}
+        {isPaused && (
+          <View className="absolute inset-0 bg-black/80 items-center justify-center" style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}>
+            <View className="bg-[#1A1A1A] rounded-3xl mx-6 w-full max-w-md" style={{ maxWidth: 400 }}>
+              {/* Modal Header */}
+              <View className="flex-row items-center justify-between px-6 py-5 border-b border-gray-800">
+                <Text className="text-white text-xl font-bold">Paused</Text>
+                <Pressable onPress={toggleRunning} hitSlop={8}>
+                  <Text className="text-white text-2xl font-light">×</Text>
+                </Pressable>
+              </View>
+
+              {/* Modal Content */}
+              <View className="p-6">
+                <Text className="text-gray-400 text-center text-sm mb-6">
+                  Watch a quick lesson for {combo?.name ?? "this exercise"}
+                </Text>
+
+                {/* YouTube Button */}
+                <Pressable onPress={watchLesson} className="active:opacity-90 mb-3">
+                  <View className="bg-boxing-red rounded-xl py-4 px-6">
+                    <Text className="text-white text-center text-base font-bold">
+                      Watch lesson on YouTube
+                    </Text>
+                  </View>
+                </Pressable>
+
+                {/* Resume Button */}
+                <Pressable onPress={toggleRunning} className="active:opacity-90 mb-3">
+                  <View className="bg-boxing-red rounded-xl py-4 px-6">
+                    <Text className="text-white text-center text-base font-bold">
+                      Resume
+                    </Text>
+                  </View>
+                </Pressable>
+
+                {/* Exit Button */}
+                <Pressable onPress={endWorkout} className="active:opacity-80">
+                  <View className="bg-[#2A2A2A] rounded-xl py-4 px-6">
+                    <Text className="text-white text-center text-base font-bold">
+                      Exit Workout
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        )}
+      </View>
     </LinearGradient>
   );
 }

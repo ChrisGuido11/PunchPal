@@ -83,7 +83,7 @@ export default function PaywallScreen({ navigation }: Props) {
 
   if (!isRevenueCatEnabled()) {
     return (
-      <View className="flex-1 bg-[#0F0F0F] items-center justify-center px-6">
+      <View className="flex-1 bg-[#000000] items-center justify-center px-6">
         <Text className="text-white text-center text-lg">
           Payments are not available on this platform
         </Text>
@@ -99,7 +99,7 @@ export default function PaywallScreen({ navigation }: Props) {
 
   return (
     <LinearGradient
-      colors={["#0F0F0F", "#1A0A0A", "#0F0F0F"]}
+      colors={["#000000", "#1A0000", "#000000"]}
       style={{ flex: 1 }}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
@@ -123,13 +123,13 @@ export default function PaywallScreen({ navigation }: Props) {
 
         {/* Header */}
         <View className="px-6 mb-8 items-center">
-          <View className="bg-boxing-gold/20 rounded-full p-4 mb-6">
-            <Ionicons name="flash" size={48} color="#FFC107" />
+          <View className="bg-boxing-red/20 rounded-full p-4 mb-6 border-2 border-boxing-red">
+            <Ionicons name="flash" size={48} color="#DC2626" />
           </View>
           <Text className="text-5xl font-black text-white text-center mb-3">
             Go Premium
           </Text>
-          <Text className="text-xl text-gray-400 text-center">
+          <Text className="text-xl text-boxing-gold text-center">
             Unlock unlimited workouts and advanced features
           </Text>
         </View>
@@ -141,8 +141,8 @@ export default function PaywallScreen({ navigation }: Props) {
               key={index}
               className="flex-row items-center mb-5 bg-white/5 rounded-2xl p-4"
             >
-              <View className="bg-boxing-gold/20 rounded-full p-2 mr-4">
-                <Ionicons name="checkmark" size={20} color="#FFC107" />
+              <View className="bg-boxing-red/20 rounded-full p-2 mr-4 border border-boxing-red">
+                <Ionicons name="checkmark" size={20} color="#DC2626" />
               </View>
               <Text className="text-white text-lg flex-1 font-medium">
                 {feature}
@@ -167,7 +167,7 @@ export default function PaywallScreen({ navigation }: Props) {
                 padding: 2,
               }}
             >
-              <View className="bg-[#0F0F0F] rounded-[22px] p-6">
+              <View className="bg-[#000000] rounded-[22px] p-6">
                 <Text className="text-boxing-gold text-sm font-bold uppercase tracking-wider mb-2 text-center">
                   Monthly Subscription
                 </Text>
@@ -199,7 +199,7 @@ export default function PaywallScreen({ navigation }: Props) {
               colors={
                 !monthlyPackage || isPurchasing
                   ? ["#4B5563", "#374151"]
-                  : ["#FFC107", "#FFB300"]
+                  : ["#DC2626", "#B91C1C"]
               }
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
@@ -210,9 +210,9 @@ export default function PaywallScreen({ navigation }: Props) {
               }}
             >
               {isPurchasing ? (
-                <ActivityIndicator size="small" color="#000" />
+                <ActivityIndicator size="small" color="#fff" />
               ) : (
-                <Text className="text-black text-center text-xl font-black">
+                <Text className="text-white text-center text-xl font-black uppercase tracking-wider">
                   Start Premium Now
                 </Text>
               )}

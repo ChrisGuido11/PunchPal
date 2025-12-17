@@ -68,7 +68,7 @@ export default function HomeScreen({ navigation }: Props) {
 
   return (
     <LinearGradient
-      colors={["#0F0F0F", "#1A1A1A"]}
+      colors={["#000000", "#1A0000"]}
       style={{ flex: 1 }}
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
@@ -86,17 +86,17 @@ export default function HomeScreen({ navigation }: Props) {
               <Text className="text-4xl font-black text-white mb-2">
                 Ready to Train?
               </Text>
-              <Text className="text-lg text-gray-400">
+              <Text className="text-lg text-boxing-gold">
                 Your personalized workout is ready
               </Text>
             </View>
             {currentStreak > 0 && (
-              <View className="bg-boxing-gold/20 border border-boxing-gold rounded-2xl px-4 py-3 items-center">
-                <Text className="text-3xl font-black text-boxing-gold">
+              <View className="bg-boxing-red/20 border-2 border-boxing-red rounded-2xl px-4 py-3 items-center">
+                <Text className="text-3xl font-black text-boxing-red">
                   {currentStreak}
                 </Text>
-                <Text className="text-xs text-boxing-gold font-bold">
-                  🔥 STREAK
+                <Text className="text-xs text-boxing-gold font-bold uppercase tracking-wider">
+                  STREAK
                 </Text>
               </View>
             )}
@@ -121,13 +121,13 @@ export default function HomeScreen({ navigation }: Props) {
               <View className="px-6 mt-4">
                 <Pressable onPress={handleRegenerate} className="active:opacity-80">
                   <LinearGradient
-                    colors={["#B91C1C", "#DC2626"]}
+                    colors={["#DC2626", "#B91C1C"]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 0 }}
                     style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 }}
                   >
                     <Text className="text-white text-center text-lg font-bold">
-                      💎 Get Fresh Workout
+                      Get Fresh Workout
                     </Text>
                   </LinearGradient>
                 </Pressable>

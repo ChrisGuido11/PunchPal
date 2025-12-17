@@ -31,18 +31,24 @@ export default function SplashScreen({ navigation }: Props) {
 
   return (
     <LinearGradient
-      colors={["#0F0F0F", "#1A1A1A", "#0F0F0F"]}
+      colors={["#000000", "#1A0000", "#000000"]}
       style={{ flex: 1 }}
       start={{ x: 0, y: 0 }}
       end={{ x: 1, y: 1 }}
     >
       <View className="flex-1 items-center justify-center px-8">
         <View className="items-center">
-          <Text className="text-6xl mb-4">🥊</Text>
-          <Text className="text-5xl font-black text-white tracking-tight">
+          {/* Minimalist boxing icon */}
+          <View className="mb-8">
+            <View className="w-24 h-24 rounded-full border-4 border-boxing-red items-center justify-center">
+              <View className="w-16 h-16 rounded-full bg-boxing-red opacity-80" />
+              <View className="absolute w-12 h-12 rounded-full border-2 border-boxing-gold" />
+            </View>
+          </View>
+          <Text className="text-5xl font-black text-white tracking-tight mb-2">
             PunchPal
           </Text>
-          <Text className="text-lg text-gray-400 mt-2 tracking-wide">
+          <Text className="text-lg text-boxing-gold mt-1 tracking-wide font-semibold">
             Your AI Boxing Coach
           </Text>
         </View>

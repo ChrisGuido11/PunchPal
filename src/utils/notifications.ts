@@ -19,7 +19,7 @@ export async function ensureDailyReminder(): Promise<boolean> {
 
     await Notifications.scheduleNotificationAsync({
       content: {
-        title: "Time to train 🥊",
+        title: "Time to train",
         body: "Keep your streak alive. Knock out a round today!",
       },
       trigger: {
