@@ -461,7 +461,7 @@ function TimerScreen({ navigation }: Props) {
 
                 {/* YouTube Button */}
                 <Pressable onPress={watchLesson} className="active:opacity-90 mb-3">
-                  <View className="bg-boxing-red rounded-xl py-4 px-6">
+                  <View className="bg-black rounded-xl py-4 px-6">
                     <Text className="text-white text-center text-base font-bold">
                       Watch lesson on YouTube
                     </Text>
@@ -470,7 +470,7 @@ function TimerScreen({ navigation }: Props) {
 
                 {/* Resume Button */}
                 <Pressable onPress={toggleRunning} className="active:opacity-90 mb-3">
-                  <View className="bg-boxing-red rounded-xl py-4 px-6">
+                  <View className="bg-black rounded-xl py-4 px-6">
                     <Text className="text-white text-center text-base font-bold">
                       Resume
                     </Text>

@@ -106,16 +106,13 @@ export default function ProfileScreen() {
                   }}
                   className="active:opacity-80"
                 >
-                  <LinearGradient
-                    colors={["#DC2626", "#B91C1C"]}
-                    style={{ borderRadius: 12, padding: 14 }}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
+                  <View
+                    style={{ backgroundColor: '#000000', borderRadius: 12, padding: 14 }}
                   >
                     <Text className="text-center text-white font-bold text-base">
                       Change Level
                     </Text>
-                  </LinearGradient>
+                  </View>
                 </Pressable>
               </>
             ) : (

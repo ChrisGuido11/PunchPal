@@ -106,24 +106,18 @@ export default function OnboardingScreen({ navigation }: Props) {
           disabled={!selectedLevel}
           className="active:opacity-80"
         >
-          <LinearGradient
-            colors={
-              selectedLevel
-                ? ["#DC2626", "#B91C1C"]
-                : ["#374151", "#1F2937"]
-            }
+          <View
             style={{
+              backgroundColor: selectedLevel ? '#000000' : '#374151',
               paddingVertical: 18,
               paddingHorizontal: 32,
               borderRadius: 16,
             }}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
           >
             <Text className="text-white text-xl font-bold text-center">
               Continue
             </Text>
-          </LinearGradient>
+          </View>
         </Pressable>
       </ScrollView>
     </LinearGradient>

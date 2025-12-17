@@ -77,11 +77,12 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
               }}
               className="flex-1"
             >
-              <LinearGradient
-                colors={
-                  activeTab === tab ? ["#DC2626", "#B91C1C"] : ["#2D2D2D", "#3D3D3D"]
-                }
-                style={{ borderRadius: 12, paddingVertical: 12 }}
+              <View
+                style={{ 
+                  backgroundColor: activeTab === tab ? '#000000' : '#2D2D2D',
+                  borderRadius: 12, 
+                  paddingVertical: 12 
+                }}
               >
                 <Text
                   className={`text-center font-bold uppercase tracking-wider ${
@@ -90,7 +91,7 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
                 >
                   {tab === "favorites" ? "Favorites" : "Recent"}
                 </Text>
-              </LinearGradient>
+              </View>
             </Pressable>
           ))}
         </View>
@@ -111,11 +112,13 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
               }}
               className="mr-3"
             >
-              <LinearGradient
-                colors={
-                  selectedType === type ? ["#DC2626", "#B91C1C"] : ["#2D2D2D", "#3D3D3D"]
-                }
-                style={{ borderRadius: 20, paddingVertical: 10, paddingHorizontal: 16 }}
+              <View
+                style={{ 
+                  backgroundColor: selectedType === type ? '#000000' : '#2D2D2D',
+                  borderRadius: 20, 
+                  paddingVertical: 10, 
+                  paddingHorizontal: 16 
+                }}
               >
                 <Text
                   className={`font-semibold uppercase tracking-wider ${

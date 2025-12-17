@@ -195,15 +195,9 @@ export default function PaywallScreen({ navigation }: Props) {
             disabled={!monthlyPackage || isPurchasing}
             className="active:opacity-80"
           >
-            <LinearGradient
-              colors={
-                !monthlyPackage || isPurchasing
-                  ? ["#4B5563", "#374151"]
-                  : ["#DC2626", "#B91C1C"]
-              }
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
+            <View
               style={{
+                backgroundColor: !monthlyPackage || isPurchasing ? '#4B5563' : '#000000',
                 borderRadius: 20,
                 paddingVertical: 18,
                 paddingHorizontal: 24,
@@ -216,7 +210,7 @@ export default function PaywallScreen({ navigation }: Props) {
                   Start Premium Now
                 </Text>
               )}
-            </LinearGradient>
+            </View>
           </Pressable>
         </View>
 

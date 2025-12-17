@@ -90,20 +90,18 @@ export default function WorkoutCard({
             </View>
 
             <Pressable onPress={handlePress} className="active:opacity-80">
-              <LinearGradient
-                colors={["#DC2626", "#B91C1C"]}
+              <View
                 style={{
+                  backgroundColor: '#000000',
                   paddingVertical: 18,
                   paddingHorizontal: 32,
                   borderRadius: 16,
                 }}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
               >
                 <Text className="text-white text-xl font-bold text-center">
                   Start Training
                 </Text>
-              </LinearGradient>
+              </View>
             </Pressable>
           </View>
         </View>

@@ -120,16 +120,13 @@ export default function HomeScreen({ navigation }: Props) {
             {__DEV__ && !isGenerating && boxingLevel ? (
               <View className="px-6 mt-4">
                 <Pressable onPress={handleRegenerate} className="active:opacity-80">
-                  <LinearGradient
-                    colors={["#DC2626", "#B91C1C"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 0 }}
-                    style={{ borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 }}
+                  <View
+                    style={{ backgroundColor: '#000000', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 }}
                   >
                     <Text className="text-white text-center text-lg font-bold">
                       Get Fresh Workout
                     </Text>
-                  </LinearGradient>
+                  </View>
                 </Pressable>
               </View>
             ) : null}
