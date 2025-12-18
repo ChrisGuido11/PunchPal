@@ -58,8 +58,9 @@ function MainTabNavigator() {
         name="Home"
         component={HomeScreen}
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home" size={size} color={color} />
+          tabBarLabel: () => null,
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="home" size={32} color={color} />
           ),
         }}
       />
@@ -67,8 +68,9 @@ function MainTabNavigator() {
         name="Profile"
         component={ProfileScreen}
         options={{
-          tabBarIcon: ({ color, size }) => (
-            <Ionicons name="person-circle" size={size} color={color} />
+          tabBarLabel: () => null,
+          tabBarIcon: ({ color }) => (
+            <Ionicons name="person-circle" size={32} color={color} />
           ),
         }}
       />
