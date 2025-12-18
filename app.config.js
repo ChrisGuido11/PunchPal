@@ -7,7 +7,7 @@ module.exports = {
     orientation: "portrait",
     userInterfaceStyle: "dark",
     newArchEnabled: true,
-    icon: "./assets/logo.png",
+    icon: "./icon.png",
     splash: {
       image: "./assets/logo.png",
       resizeMode: "contain",
@@ -26,8 +26,9 @@ module.exports = {
       package: "com.punchpal.app",
     },
     extra: {
-      // This allows EAS secrets to be passed through to the app
-      // Set GROK_API_KEY as an EAS secret, and it will be available here
+      eas: {
+        projectId: "019b16a7-0b29-747f-bcc9-6f2058b725f8",
+      },
       grokApiKey: process.env.GROK_API_KEY || process.env.EXPO_PUBLIC_VIBECODE_GROK_API_KEY,
     },
   },
