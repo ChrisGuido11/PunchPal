@@ -344,7 +344,14 @@ function TimerScreen({ navigation }: Props) {
       setIsPaused(false);
       return;
     }
-    setIsPaused((p) => !p);
+    setIsPaused((p) => {
+      const newPausedState = !p;
+      // When resuming (going from paused to not paused), reset combo key to re-trigger speech
+      if (p && !newPausedState) {
+        lastComboKeyRef.current = null;
+      }
+      return newPausedState;
+    });
   };
 
   const endWorkout = () => {
@@ -446,11 +453,8 @@ function TimerScreen({ navigation }: Props) {
           <View className="absolute inset-0 bg-black/80 items-center justify-center" style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}>
             <View className="bg-[#1A1A1A] rounded-3xl mx-6 w-full max-w-md" style={{ maxWidth: 400 }}>
               {/* Modal Header */}
-              <View className="flex-row items-center justify-between px-6 py-5 border-b border-gray-800">
+              <View className="px-6 py-5 border-b border-gray-800">
                 <Text className="text-white text-xl font-bold">Paused</Text>
-                <Pressable onPress={toggleRunning} hitSlop={8}>
-                  <Text className="text-white text-2xl font-light">×</Text>
-                </Pressable>
               </View>
 
               {/* Modal Content */}
@@ -461,7 +465,7 @@ function TimerScreen({ navigation }: Props) {
 
                 {/* YouTube Button */}
                 <Pressable onPress={watchLesson} className="active:opacity-90 mb-3">
-                  <View className="bg-black rounded-xl py-4 px-6">
+                  <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-red">
                     <Text className="text-white text-center text-base font-bold">
                       Watch lesson on YouTube
                     </Text>
@@ -470,7 +474,7 @@ function TimerScreen({ navigation }: Props) {
 
                 {/* Resume Button */}
                 <Pressable onPress={toggleRunning} className="active:opacity-90 mb-3">
-                  <View className="bg-black rounded-xl py-4 px-6">
+                  <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-gold">
                     <Text className="text-white text-center text-base font-bold">
                       Resume
                     </Text>

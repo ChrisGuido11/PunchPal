@@ -22,17 +22,16 @@ export default function SplashScreen({ navigation }: Props) {
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
-    // Start animations immediately
+    // Start animations with smooth, slower fade
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
-        duration: 800,
+        duration: 1500,
         useNativeDriver: true,
       }),
-      Animated.spring(scaleAnim, {
+      Animated.timing(scaleAnim, {
         toValue: 1,
-        friction: 4,
-        tension: 40,
+        duration: 1500,
         useNativeDriver: true,
       }),
     ]).start();
