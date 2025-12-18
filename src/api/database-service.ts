@@ -48,11 +48,24 @@ export async function getUserStats(userId: string): Promise<UserStats | null> {
     const { data, error } = await supabase
       .from("user_stats")
       .select("*")
-      .eq("userId", userId)
+      .eq("user_id", userId)
       .single();
 
     if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
-    return data || null;
+    if (!data) return null;
+    
+    return {
+      userId: data.user_id,
+      totalWorkouts: data.total_workouts,
+      totalMinutes: data.total_minutes,
+      currentLevel: data.current_level,
+      nextLevelProgress: data.next_level_progress,
+      combosLearned: data.combos_learned,
+      currentStreak: data.current_streak,
+      longestStreak: data.longest_streak,
+      avgAccuracy: data.avg_accuracy,
+      lastWorkoutDate: data.last_workout_date,
+    };
   } catch (error) {
     console.error("Error fetching user stats:", error);
     return null;
@@ -67,25 +80,44 @@ export async function upsertUserStats(
   if (!isSupabaseEnabled()) return null;
 
   try {
+    const dbRecord = {
+      user_id: userId,
+      total_workouts: stats.totalWorkouts,
+      total_minutes: stats.totalMinutes,
+      current_level: stats.currentLevel,
+      next_level_progress: stats.nextLevelProgress,
+      combos_learned: stats.combosLearned,
+      current_streak: stats.currentStreak,
+      longest_streak: stats.longestStreak,
+      avg_accuracy: stats.avgAccuracy,
+      last_workout_date: stats.lastWorkoutDate,
+    };
+    
     const { data, error } = await supabase
       .from("user_stats")
-      .upsert(
-        {
-          userId,
-          ...stats,
-        },
-        { onConflict: "userId" }
-      )
+      .upsert(dbRecord, { onConflict: "user_id" })
       .select()
       .single();
 
     if (error) throw error;
-    return data;
+    
+    return data ? {
+      userId: data.user_id,
+      totalWorkouts: data.total_workouts,
+      totalMinutes: data.total_minutes,
+      currentLevel: data.current_level,
+      nextLevelProgress: data.next_level_progress,
+      combosLearned: data.combos_learned,
+      currentStreak: data.current_streak,
+      longestStreak: data.longest_streak,
+      avgAccuracy: data.avg_accuracy,
+      lastWorkoutDate: data.last_workout_date,
+    } : null;
   } catch (error) {
     console.error("Error upserting user stats:", error);
     return null;
   }
-}
+}}
 
 // Log a completed workout
 export async function logWorkoutSession(
@@ -94,14 +126,42 @@ export async function logWorkoutSession(
   if (!isSupabaseEnabled()) return null;
 
   try {
+    const dbRecord = {
+      user_id: session.userId,
+      workout_name: session.workoutName,
+      difficulty: session.difficulty,
+      duration: session.duration,
+      rounds: session.rounds,
+      completed_at: session.completedAt,
+      duration_minutes: session.durationMinutes,
+      combos_attempted: session.combosAttempted,
+      combos_completed: session.combosCompleted,
+      accuracy: session.accuracy,
+      notes: session.notes,
+    };
+
     const { data, error } = await supabase
       .from("workout_sessions")
-      .insert([session])
+      .insert([dbRecord])
       .select()
       .single();
 
     if (error) throw error;
-    return data;
+    
+    return data ? {
+      id: data.id,
+      userId: data.user_id,
+      workoutName: data.workout_name,
+      difficulty: data.difficulty,
+      duration: data.duration,
+      rounds: data.rounds,
+      completedAt: data.completed_at,
+      durationMinutes: data.duration_minutes,
+      combosAttempted: data.combos_attempted,
+      combosCompleted: data.combos_completed,
+      accuracy: data.accuracy,
+      notes: data.notes,
+    } : null;
   } catch (error) {
     console.error("Error logging workout session:", error);
     return null;
