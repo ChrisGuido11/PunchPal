@@ -9,7 +9,7 @@ module.exports = {
     newArchEnabled: true,
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.vibecode.punchpal",
+      bundleIdentifier: "com.punchpal.app",
       infoPlist: {
         NSMicrophoneUsageDescription: "PunchPal needs microphone access for audio feedback during workouts",
         NSSpeechRecognitionUsageDescription: "PunchPal uses speech to call out combos during workouts",
