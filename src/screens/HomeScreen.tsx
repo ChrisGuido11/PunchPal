@@ -8,6 +8,7 @@ import { useUserStore } from "../state/userStore";
 import { generateWorkout } from "../api/workout-generator";
 import WorkoutCard from "../components/WorkoutCard";
 import PulsingEnergyLoader from "../components/PulsingEnergyLoader";
+import { upsertUserStats } from "../api/database-service";
 import { ensureDailyReminder } from "../utils/notifications";
 
 type RootStackParamList = {
@@ -19,11 +20,13 @@ type Props = NativeStackScreenProps<RootStackParamList>;
 
 export default function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const userId = useUserStore((s) => s.userId);
   const boxingLevel = useUserStore((s) => s.boxingLevel);
   const workoutHistory = useUserStore((s) => s.workoutHistory);
   const currentWorkout = useUserStore((s) => s.currentWorkout);
   const setCurrentWorkout = useUserStore((s) => s.setCurrentWorkout);
   const currentStreak = useUserStore((s) => s.currentStreak);
+  const longestStreak = useUserStore((s) => s.longestStreak);
   const updateStreaks = useUserStore((s) => s.updateStreaks);
   // const favoriteWorkouts = useUserStore((s) => s.favoriteWorkouts); // TODO: enable library later
 
@@ -45,7 +48,32 @@ export default function HomeScreen({ navigation }: Props) {
     setError(null);
 
     try {
-      const workout = await generateWorkout(boxingLevel, workoutHistory.length);
+      // Sync user stats to Supabase for AI personalization
+      if (userId) {
+        const totalMinutes = workoutHistory.reduce((sum, w) => sum + (w.duration || 0), 0);
+        const combosCompleted = new Set(workoutHistory.flatMap(w => w.combos || [])).size;
+        const avgAccuracy = workoutHistory.length > 0 
+          ? workoutHistory.reduce((sum, w) => sum + (w.accuracy || 0), 0) / workoutHistory.length 
+          : 0;
+        
+        await upsertUserStats(userId, {
+          userId,
+          totalWorkouts: workoutHistory.length,
+          totalMinutes,
+          currentLevel: boxingLevel,
+          nextLevelProgress: calculateLevelProgress(workoutHistory.length, boxingLevel),
+          combosLearned: combosCompleted,
+          currentStreak,
+          longestStreak,
+          avgAccuracy: Math.round(avgAccuracy),
+          lastWorkoutDate: workoutHistory.length > 0 
+            ? new Date(workoutHistory[workoutHistory.length - 1].completedAt).toISOString() 
+            : null,
+        });
+      }
+
+      // Generate workout with personalized data from Supabase
+      const workout = await generateWorkout(boxingLevel, workoutHistory.length, "power", userId);
       setCurrentWorkout(workout);
     } catch (err) {
       console.error("Failed to generate workout:", err);
@@ -53,6 +81,13 @@ export default function HomeScreen({ navigation }: Props) {
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  // Calculate level progress based on workouts completed
+  const calculateLevelProgress = (workouts: number, level: BoxingLevel): number => {
+    const thresholds = { beginner: 20, intermediate: 50, advanced: 100 };
+    const threshold = thresholds[level];
+    return Math.min(Math.round((workouts / threshold) * 100), 100);
   };
 
   const handleStartTraining = () => {

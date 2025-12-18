@@ -49,12 +49,12 @@ CREATE TABLE IF NOT EXISTS combo_progress (
   UNIQUE(user_id, combo_notation)
 );
 
--- Create indexes for faster queries
-CREATE INDEX idx_user_stats_user_id ON user_stats(user_id);
-CREATE INDEX idx_workout_sessions_user_id ON workout_sessions(user_id);
-CREATE INDEX idx_workout_sessions_completed_at ON workout_sessions(completed_at DESC);
-CREATE INDEX idx_combo_progress_user_id ON combo_progress(user_id);
-CREATE INDEX idx_combo_progress_best_accuracy ON combo_progress(best_accuracy DESC);
+-- Create indexes for faster queries (with IF NOT EXISTS to handle re-runs)
+CREATE INDEX IF NOT EXISTS idx_user_stats_user_id ON user_stats(user_id);
+CREATE INDEX IF NOT EXISTS idx_workout_sessions_user_id ON workout_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_workout_sessions_completed_at ON workout_sessions(completed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_combo_progress_user_id ON combo_progress(user_id);
+CREATE INDEX IF NOT EXISTS idx_combo_progress_best_accuracy ON combo_progress(best_accuracy DESC);
 
 -- Enable Row Level Security (RLS)
 ALTER TABLE user_stats ENABLE ROW LEVEL SECURITY;
@@ -62,6 +62,16 @@ ALTER TABLE workout_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE combo_progress ENABLE ROW LEVEL SECURITY;
 
 -- Create RLS policies for anonymous users (based on user_id match)
+-- Drop existing policies first to handle re-runs
+DROP POLICY IF EXISTS "Users can view their own stats" ON user_stats;
+DROP POLICY IF EXISTS "Users can insert their own stats" ON user_stats;
+DROP POLICY IF EXISTS "Users can update their own stats" ON user_stats;
+DROP POLICY IF EXISTS "Users can view their own sessions" ON workout_sessions;
+DROP POLICY IF EXISTS "Users can insert their own sessions" ON workout_sessions;
+DROP POLICY IF EXISTS "Users can view their own combo progress" ON combo_progress;
+DROP POLICY IF EXISTS "Users can insert their own combo progress" ON combo_progress;
+DROP POLICY IF EXISTS "Users can update their own combo progress" ON combo_progress;
+
 CREATE POLICY "Users can view their own stats" ON user_stats
   FOR SELECT USING (user_id = current_setting('app.current_user_id', true));
 

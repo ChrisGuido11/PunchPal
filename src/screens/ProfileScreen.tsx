@@ -1,11 +1,20 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, Pressable } from "react-native";
+import { View, Text, ScrollView, Pressable, Alert } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
 import { useUserStore } from "../state/userStore";
 import { BoxingLevel } from "../types/workout";
 import { ACHIEVEMENTS, getAchievementProgress } from "../utils/achievements";
+import { supabase, isSupabaseEnabled } from "../lib/supabaseClient";
+import { upsertUserStats } from "../api/database-service";
+
+type RootStackParamList = {
+  Auth: undefined;
+  Splash: undefined;
+};
 
 const levels: { value: BoxingLevel; title: string; description: string }[] = [
   {
@@ -27,6 +36,8 @@ const levels: { value: BoxingLevel; title: string; description: string }[] = [
 
 export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const userId = useUserStore((s) => s.userId);
   const boxingLevel = useUserStore((s) => s.boxingLevel);
   const setBoxingLevel = useUserStore((s) => s.setBoxingLevel);
   const workoutHistory = useUserStore((s) => s.workoutHistory);
@@ -37,15 +48,136 @@ export default function ProfileScreen() {
 
   const [isEditingLevel, setIsEditingLevel] = useState(false);
 
-  const handleLevelChange = (level: BoxingLevel) => {
+  const handleLevelChange = async (level: BoxingLevel) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setBoxingLevel(level);
     setIsEditingLevel(false);
+
+    // Sync boxing level change to Supabase for AI personalization
+    if (userId) {
+      const totalMinutes = workoutHistory.reduce((sum, w) => sum + (w.duration || 0), 0);
+      const combosCompleted = new Set(workoutHistory.flatMap(w => w.combos || [])).size;
+      const avgAccuracy = workoutHistory.length > 0 
+        ? workoutHistory.reduce((sum, w) => sum + (w.accuracy || 0), 0) / workoutHistory.length 
+        : 0;
+      
+      const thresholds = { beginner: 20, intermediate: 50, advanced: 100 };
+      const threshold = thresholds[level];
+      const progress = Math.min(Math.round((workoutHistory.length / threshold) * 100), 100);
+
+      await upsertUserStats(userId, {
+        userId,
+        totalWorkouts: workoutHistory.length,
+        totalMinutes,
+        currentLevel: level,
+        nextLevelProgress: progress,
+        combosLearned: combosCompleted,
+        currentStreak,
+        longestStreak,
+        avgAccuracy: Math.round(avgAccuracy),
+        lastWorkoutDate: workoutHistory.length > 0 
+          ? new Date(workoutHistory[workoutHistory.length - 1].completedAt).toISOString() 
+          : null,
+      });
+    }
   };
 
   const handleClearHistory = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     clearWorkoutHistory();
+  };
+
+  const handleSignOut = async () => {
+    Alert.alert(
+      "Sign Out",
+      "Are you sure you want to sign out?",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Sign Out",
+          style: "destructive",
+          onPress: async () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            
+            if (isSupabaseEnabled()) {
+              await supabase.auth.signOut();
+            }
+            
+            // Clear user store
+            useUserStore.setState({ 
+              userId: null,
+              hasCompletedOnboarding: false,
+              workoutHistory: [],
+              currentStreak: 0,
+              longestStreak: 0,
+            });
+            
+            navigation.reset({
+              index: 0,
+              routes: [{ name: "Auth" }],
+            });
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteAccount = async () => {
+    Alert.alert(
+      "Delete Account",
+      "Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently deleted.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            
+            if (isSupabaseEnabled()) {
+              const { data: { user } } = await supabase.auth.getUser();
+              if (user) {
+                // Delete user data from database
+                await supabase.from('user_stats').delete().eq('user_id', user.id);
+                await supabase.from('workout_sessions').delete().eq('user_id', user.id);
+                await supabase.from('combo_progress').delete().eq('user_id', user.id);
+                
+                // Delete auth account (requires admin privileges in production)
+                // In production, you'd call a server function to handle this
+              }
+              
+              await supabase.auth.signOut();
+            }
+            
+            // Clear all user data
+            useUserStore.setState({ 
+              userId: null,
+              hasCompletedOnboarding: false,
+              boxingLevel: null,
+              workoutHistory: [],
+              currentStreak: 0,
+              longestStreak: 0,
+              lastWorkoutDate: null,
+              currentWorkout: null,
+              favoriteWorkouts: [],
+              recentlyCompleted: [],
+              unlockedAchievements: [],
+            });
+            
+            navigation.reset({
+              index: 0,
+              routes: [{ name: "Splash" }],
+            });
+          },
+        },
+      ]
+    );
   };
 
   const totalWorkouts = workoutHistory.length;
@@ -359,6 +491,41 @@ export default function ProfileScreen() {
               )}
             </View>
           )}
+        </View>
+
+        {/* Account Actions Section */}
+        <View className="px-6 mb-6 mt-8">
+          <Text className="text-xl font-bold text-white mb-4">
+            Account
+          </Text>
+          
+          {/* Sign Out Button */}
+          <Pressable
+            onPress={handleSignOut}
+            className="active:opacity-80 mb-3"
+          >
+            <View className="bg-black border-2 border-boxing-gold rounded-xl py-4 px-6">
+              <Text className="text-boxing-gold text-center text-base font-bold uppercase tracking-wider">
+                Sign Out
+              </Text>
+            </View>
+          </Pressable>
+
+          {/* Delete Account Button */}
+          <Pressable
+            onPress={handleDeleteAccount}
+            className="active:opacity-80"
+          >
+            <View className="bg-black border-2 border-boxing-red rounded-xl py-4 px-6">
+              <Text className="text-boxing-red text-center text-base font-bold uppercase tracking-wider">
+                Delete Account
+              </Text>
+            </View>
+          </Pressable>
+
+          <Text className="text-gray-500 text-xs text-center mt-4">
+            Deleting your account will permanently remove all your data
+          </Text>
         </View>
       </ScrollView>
     </LinearGradient>

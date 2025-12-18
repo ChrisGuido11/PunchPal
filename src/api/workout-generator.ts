@@ -1,6 +1,7 @@
 import { getGrokClient } from "./grok";
 import { BoxingLevel, WorkoutPlan, WorkoutType } from "../types/workout";
 import Constants from "expo-constants";
+import { getUserStats } from "./database-service";
 
 // Fallback workouts for when API fails
 const fallbackWorkouts: Record<BoxingLevel, WorkoutPlan[]> = {
@@ -99,7 +100,8 @@ function getRandomFallbackWorkout(level: BoxingLevel): WorkoutPlan {
 export async function generateWorkout(
   boxingLevel: BoxingLevel,
   workoutHistory: number,
-  workoutType: WorkoutType = "power"
+  workoutType: WorkoutType = "power",
+  userId?: string | null
 ): Promise<WorkoutPlan> {
   const grokClient = getGrokClient();
 
@@ -140,6 +142,12 @@ export async function generateWorkout(
   };
 
   const guidelines = levelGuidelines[boxingLevel];
+
+  // Fetch personalized user stats from Supabase for AI personalization
+  let userStats = null;
+  if (userId) {
+    userStats = await getUserStats(userId);
+  }
 
   let typeGuidance = "";
   let typeDuration = "";
@@ -238,11 +246,35 @@ Return ONLY valid JSON in this exact format:
   ]
 }`;
 
+  // Build personalization context from Supabase stats
+  let personalizationContext = "";
+  if (userStats) {
+    personalizationContext = `
+
+USER PERSONALIZATION DATA FROM SUPABASE:
+- Total Training Sessions: ${userStats.totalWorkouts}
+- Total Training Time: ${userStats.totalMinutes} minutes
+- Current Level: ${userStats.currentLevel}
+- Progress to Next Level: ${userStats.nextLevelProgress}%
+- Combos Mastered: ${userStats.combosLearned}
+- Current Training Streak: ${userStats.currentStreak} days
+- Longest Training Streak: ${userStats.longestStreak} days
+- Average Accuracy: ${userStats.avgAccuracy}%
+- Last Workout: ${userStats.lastWorkoutDate || 'First workout'}
+
+Use this data to:
+1. Adjust combo complexity based on combos mastered (${userStats.combosLearned} combos)
+2. Consider their accuracy (${userStats.avgAccuracy}%) - if high, add more challenge; if low, focus on fundamentals
+3. Reference their streak (${userStats.currentStreak} days) - reward consistency with variety
+4. Match workout difficulty to their current level (${userStats.currentLevel}) and progress (${userStats.nextLevelProgress}%)
+5. If they're close to leveling up (>80%), introduce slightly harder combinations to prepare them`;
+  }
+
   const userPrompt = `Generate a ${boxingLevel} level boxing workout. User has completed ${workoutHistory} workouts before. Make this workout DISTINCTLY ${boxingLevel} level - it should be ${
     boxingLevel === "beginner" ? "simple and focused on fundamentals" :
     boxingLevel === "intermediate" ? "more complex with mixed levels and angles" :
     "advanced with complex patterns and fight scenarios"
-  }.`;
+  }.${personalizationContext}`;
 
   try {
     // Check if API key is available before making the request

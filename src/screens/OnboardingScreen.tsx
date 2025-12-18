@@ -5,6 +5,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as Haptics from "expo-haptics";
 import { BoxingLevel } from "../types/workout";
 import { useUserStore } from "../state/userStore";
+import { upsertUserStats } from "../api/database-service";
 
 type RootStackParamList = {
   Splash: undefined;
@@ -34,17 +35,35 @@ const levels: { value: BoxingLevel; title: string; description: string }[] = [
 
 export default function OnboardingScreen({ navigation }: Props) {
   const [selectedLevel, setSelectedLevel] = useState<BoxingLevel | null>(null);
+  const userId = useUserStore((s) => s.userId);
   const setBoxingLevel = useUserStore((s) => s.setBoxingLevel);
   const setHasCompletedOnboarding = useUserStore(
     (s) => s.setHasCompletedOnboarding
   );
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (!selectedLevel) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setBoxingLevel(selectedLevel);
     setHasCompletedOnboarding(true);
+
+    // Initialize user stats in Supabase with selected boxing level
+    if (userId) {
+      await upsertUserStats(userId, {
+        userId,
+        totalWorkouts: 0,
+        totalMinutes: 0,
+        currentLevel: selectedLevel,
+        nextLevelProgress: 0,
+        combosLearned: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        avgAccuracy: 0,
+        lastWorkoutDate: null,
+      });
+    }
+
     navigation.replace("MainTabs");
   };
 

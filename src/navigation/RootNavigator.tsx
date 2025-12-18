@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import SplashScreen from "../screens/SplashScreen";
+import AuthScreen from "../screens/AuthScreen";
 import OnboardingScreen from "../screens/OnboardingScreen";
 import HomeScreen from "../screens/HomeScreen";
 import ProfileScreen from "../screens/ProfileScreen";
@@ -12,6 +13,7 @@ import TimerScreen from "../screens/TimerScreen";
 
 export type RootStackParamList = {
   Splash: undefined;
+  Auth: undefined;
   Onboarding: undefined;
   MainTabs: undefined;
   Timer: undefined;
@@ -85,6 +87,7 @@ export default function RootNavigator() {
       }}
     >
       <Stack.Screen name="Splash" component={SplashScreen} />
+      <Stack.Screen name="Auth" component={AuthScreen} />
       <Stack.Screen name="Onboarding" component={OnboardingScreen} />
       <Stack.Screen name="MainTabs" component={MainTabNavigator} />
       <Stack.Screen
