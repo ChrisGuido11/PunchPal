@@ -28,7 +28,8 @@
     "extra": {
       "eas": {
         "projectId": ""
-      }
+      },
+      "grokApiKey": "$EXPO_PUBLIC_VIBECODE_GROK_API_KEY"
     }
   }
 }

@@ -160,7 +160,7 @@ export default function HomeScreen({ navigation }: Props) {
               onStartTraining={handleStartTraining}
             />
 
-            {__DEV__ && !isGenerating && boxingLevel ? (
+            {!isGenerating && boxingLevel ? (
               <View className="px-6 mt-4">
                 <Pressable onPress={handleRegenerate} className="active:opacity-80">
                   <View className="relative">
@@ -186,7 +186,7 @@ export default function HomeScreen({ navigation }: Props) {
                       />
                     </View>
                     <View
-                      style={{ backgroundColor: '#000000', borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 }}
+                      style={{ backgroundColor: "#000000", borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 }}
                     >
                       <Text className="text-white text-center text-lg font-bold">
                         Get Fresh Workout

@@ -146,9 +146,11 @@ src/
 ## Environment Variables
 
 The app uses the following environment variables (configure via Vibecode ENV tab):
-- `EXPO_PUBLIC_VIBECODE_GROK_API_KEY` - Grok AI API key for workout generation
+- `EXPO_PUBLIC_VIBECODE_GROK_API_KEY` - Grok AI API key for workout generation (automatically configured in app.json for production builds)
 - `EXPO_PUBLIC_SUPABASE_URL` - Supabase project URL (optional, for cloud features)
 - `EXPO_PUBLIC_SUPABASE_ANON_KEY` - Supabase anonymous key (optional, for cloud features)
+
+Note: The Grok API key is automatically injected into production builds via the app.json configuration.
 
 ## Database Schema (Supabase)
 
