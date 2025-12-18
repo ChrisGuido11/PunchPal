@@ -51,19 +51,16 @@ export default function WorkoutCard({
 
         <View className="bg-boxing-cardBg border-2 border-boxing-red rounded-3xl overflow-hidden">
           <View className="p-6">
-            <View className="flex-row items-center justify-between mb-4">
-              <View className="flex-1">
-                <Text className="text-3xl font-black text-white mb-1">
-                  {workout.name}
-                </Text>
-                <Text className={`text-sm font-semibold ${difficultyColor}`}>
-                  {workout.difficulty.toUpperCase()}
-                </Text>
-              </View>
-              {/* Minimalist boxing icon */}
-              <View className="w-14 h-14 rounded-full border-3 border-boxing-red items-center justify-center">
-                <View className="w-9 h-9 rounded-full bg-boxing-red opacity-80" />
-              </View>
+            <View className="mb-6">
+              <Text className="text-3xl font-black text-white mb-1">
+                {workout.name.split(':')[0]}:
+              </Text>
+              <Text className="text-2xl font-black text-white mb-3">
+                {workout.name.split(':')[1]}
+              </Text>
+              <Text className={`text-sm font-semibold ${difficultyColor}`}>
+                {workout.difficulty.toUpperCase()}
+              </Text>
             </View>
 
             <View className="flex-row space-x-4 mb-6">

@@ -231,10 +231,11 @@ CRITICAL RULES:
 5. Vary the combinations - don't repeat similar patterns
 6. Make workout names motivating and level-appropriate
 7. Workout type "${workoutType}" guidelines MUST be followed
+8. WORKOUT NAME FORMAT RULE (CRITICAL): Format workout names as "TWO WORD STYLE: Rest of Name". The part before the colon MUST be exactly TWO words. Examples: "Power Rush: Build Your Stamina", "Combo Flow: Master Complex Patterns", "Speed Burst: Explosive Training". Never more than 2 words before the colon.
 
 Return ONLY valid JSON in this exact format:
 {
-  "name": "Workout name",
+  "name": "Two Word Style: Rest of Name Here",
   "duration": 30,
   "rounds": 10,
   "combos": [
