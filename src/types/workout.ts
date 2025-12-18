@@ -31,8 +31,6 @@ export interface WorkoutHistory {
   rounds: number;
   workoutName: string;
   workoutType: WorkoutType;
-  combos?: string[];
-  accuracy?: number;
 }
 
 export interface Achievement {

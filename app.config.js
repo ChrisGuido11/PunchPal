@@ -1,20 +1,14 @@
 module.exports = {
   expo: {
-    name: "PunchPal",
-    slug: "punchpal",
-    scheme: "punchpal",
+    name: "vibecode",
+    slug: "vibecode",
+    scheme: "vibecode",
     version: "1.0.0",
     orientation: "portrait",
     userInterfaceStyle: "light",
     newArchEnabled: true,
     ios: {
       supportsTablet: true,
-      bundleIdentifier: "com.punchpal.app",
-      infoPlist: {
-        NSMicrophoneUsageDescription: "PunchPal needs microphone access for audio feedback during workouts",
-        NSSpeechRecognitionUsageDescription: "PunchPal uses speech to call out combos during workouts",
-        NSUserNotificationsUsageDescription: "PunchPal sends daily reminders to keep your training streak alive"
-      }
     },
     android: {
       edgeToEdgeEnabled: true,
