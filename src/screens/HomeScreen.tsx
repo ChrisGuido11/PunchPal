@@ -10,6 +10,7 @@ import WorkoutCard from "../components/WorkoutCard";
 import PulsingEnergyLoader from "../components/PulsingEnergyLoader";
 import { upsertUserStats } from "../api/database-service";
 import { ensureDailyReminder } from "../utils/notifications";
+import { BoxingLevel } from "../types/workout";
 
 type RootStackParamList = {
   Timer: undefined;
