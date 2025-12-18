@@ -55,6 +55,7 @@ export default function ProfileScreen() {
 
     // Sync boxing level change to Supabase for AI personalization
     if (userId) {
+      console.log('Profile: Updating boxing level to:', level);
       const totalMinutes = workoutHistory.reduce((sum, w) => sum + (w.duration || 0), 0);
       const combosCompleted = new Set(workoutHistory.flatMap(w => w.combos || [])).size;
       const avgAccuracy = workoutHistory.length > 0 
@@ -65,7 +66,7 @@ export default function ProfileScreen() {
       const threshold = thresholds[level];
       const progress = Math.min(Math.round((workoutHistory.length / threshold) * 100), 100);
 
-      await upsertUserStats(userId, {
+      const result = await upsertUserStats(userId, {
         userId,
         totalWorkouts: workoutHistory.length,
         totalMinutes,
@@ -79,6 +80,9 @@ export default function ProfileScreen() {
           ? new Date(workoutHistory[workoutHistory.length - 1].completedAt).toISOString() 
           : null,
       });
+      console.log('Profile: Level update result:', result ? 'Success' : 'Failed');
+    } else {
+      console.log('Profile: No userId found, skipping Supabase sync');
     }
   };
 

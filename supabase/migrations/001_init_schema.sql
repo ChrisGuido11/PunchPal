@@ -61,7 +61,7 @@ ALTER TABLE user_stats ENABLE ROW LEVEL SECURITY;
 ALTER TABLE workout_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE combo_progress ENABLE ROW LEVEL SECURITY;
 
--- Create RLS policies for anonymous users (based on user_id match)
+-- Create RLS policies using Supabase Auth
 -- Drop existing policies first to handle re-runs
 DROP POLICY IF EXISTS "Users can view their own stats" ON user_stats;
 DROP POLICY IF EXISTS "Users can insert their own stats" ON user_stats;
@@ -72,26 +72,27 @@ DROP POLICY IF EXISTS "Users can view their own combo progress" ON combo_progres
 DROP POLICY IF EXISTS "Users can insert their own combo progress" ON combo_progress;
 DROP POLICY IF EXISTS "Users can update their own combo progress" ON combo_progress;
 
+-- RLS policies that use Supabase auth.uid() for authenticated users
 CREATE POLICY "Users can view their own stats" ON user_stats
-  FOR SELECT USING (user_id = current_setting('app.current_user_id', true));
+  FOR SELECT USING (user_id = auth.uid()::text);
 
 CREATE POLICY "Users can insert their own stats" ON user_stats
-  FOR INSERT WITH CHECK (user_id = current_setting('app.current_user_id', true));
+  FOR INSERT WITH CHECK (user_id = auth.uid()::text);
 
 CREATE POLICY "Users can update their own stats" ON user_stats
-  FOR UPDATE USING (user_id = current_setting('app.current_user_id', true));
+  FOR UPDATE USING (user_id = auth.uid()::text);
 
 CREATE POLICY "Users can view their own sessions" ON workout_sessions
-  FOR SELECT USING (user_id = current_setting('app.current_user_id', true));
+  FOR SELECT USING (user_id = auth.uid()::text);
 
 CREATE POLICY "Users can insert their own sessions" ON workout_sessions
-  FOR INSERT WITH CHECK (user_id = current_setting('app.current_user_id', true));
+  FOR INSERT WITH CHECK (user_id = auth.uid()::text);
 
 CREATE POLICY "Users can view their own combo progress" ON combo_progress
-  FOR SELECT USING (user_id = current_setting('app.current_user_id', true));
+  FOR SELECT USING (user_id = auth.uid()::text);
 
 CREATE POLICY "Users can insert their own combo progress" ON combo_progress
-  FOR INSERT WITH CHECK (user_id = current_setting('app.current_user_id', true));
+  FOR INSERT WITH CHECK (user_id = auth.uid()::text);
 
 CREATE POLICY "Users can update their own combo progress" ON combo_progress
-  FOR UPDATE USING (user_id = current_setting('app.current_user_id', true));
+  FOR UPDATE USING (user_id = auth.uid()::text);

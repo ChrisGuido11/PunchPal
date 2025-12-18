@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, ScrollView, Pressable } from "react-native";
+import { View, Text, ScrollView, Pressable, Image } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -118,9 +118,16 @@ export default function HomeScreen({ navigation }: Props) {
         <View className="px-6 mb-6">
           <View className="flex-row items-center justify-between mb-4">
             <View className="flex-1">
-              <Text className="text-4xl font-black text-white mb-2">
-                Ready to Train?
-              </Text>
+              <View className="flex-row items-center mb-2">
+                <Image
+                  source={require("../../assets/logo.png")}
+                  style={{ width: 64, height: 64, marginRight: 12 }}
+                  resizeMode="contain"
+                />
+                <Text className="text-4xl font-black text-white">
+                  PunchPal
+                </Text>
+              </View>
               <Text className="text-lg text-boxing-gold">
                 Your personalized workout is ready
               </Text>

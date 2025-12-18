@@ -77,9 +77,13 @@ export async function upsertUserStats(
   userId: string,
   stats: Partial<UserStats>
 ): Promise<UserStats | null> {
-  if (!isSupabaseEnabled()) return null;
+  if (!isSupabaseEnabled()) {
+    console.log('Supabase not enabled, skipping upsertUserStats');
+    return null;
+  }
 
   try {
+    console.log('Upserting user stats for userId:', userId);
     const dbRecord = {
       user_id: userId,
       total_workouts: stats.totalWorkouts,
@@ -99,7 +103,10 @@ export async function upsertUserStats(
       .select()
       .single();
 
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase upsert error:', error);
+      throw error;
+    }
     
     return data ? {
       userId: data.user_id,
@@ -117,7 +124,7 @@ export async function upsertUserStats(
     console.error("Error upserting user stats:", error);
     return null;
   }
-}}
+}
 
 // Log a completed workout
 export async function logWorkoutSession(

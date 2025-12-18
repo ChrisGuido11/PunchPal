@@ -50,7 +50,8 @@ export default function OnboardingScreen({ navigation }: Props) {
 
     // Initialize user stats in Supabase with selected boxing level
     if (userId) {
-      await upsertUserStats(userId, {
+      console.log('Onboarding: Saving user stats for userId:', userId);
+      const result = await upsertUserStats(userId, {
         userId,
         totalWorkouts: 0,
         totalMinutes: 0,
@@ -62,6 +63,9 @@ export default function OnboardingScreen({ navigation }: Props) {
         avgAccuracy: 0,
         lastWorkoutDate: null,
       });
+      console.log('Onboarding: User stats save result:', result ? 'Success' : 'Failed');
+    } else {
+      console.log('Onboarding: No userId found, skipping Supabase sync');
     }
 
     navigation.replace("MainTabs");
