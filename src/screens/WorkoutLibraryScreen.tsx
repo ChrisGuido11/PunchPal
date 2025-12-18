@@ -135,7 +135,7 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
                           ? "Endurance"
                           : "Technique"}
                 </Text>
-              </LinearGradient>
+              </View>
             </Pressable>
           ))}
         </ScrollView>

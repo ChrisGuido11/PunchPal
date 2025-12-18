@@ -18,7 +18,7 @@ type AuthMode = "signin" | "signup";
 
 export default function AuthScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const setUserId = useUserStore((s) => s.userId);
+  const setUserId = useUserStore((s) => s.setUserId);
   const [mode, setMode] = useState<AuthMode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

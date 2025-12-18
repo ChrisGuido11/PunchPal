@@ -186,7 +186,7 @@ export async function getWorkoutHistory(
     const { data, error } = await supabase
       .from("workout_sessions")
       .select("*")
-      .eq("userId", userId)
+      .eq("user_id", userId)
       .order("completedAt", { ascending: false })
       .limit(limit);
 
@@ -213,7 +213,7 @@ export async function updateComboProgress(
     const { data: existing } = await supabase
       .from("combo_progress")
       .select("*")
-      .eq("userId", userId)
+      .eq("user_id", userId)
       .eq("comboNotation", comboNotation)
       .single();
 
@@ -273,7 +273,7 @@ export async function evaluateLevelUp(userId: string): Promise<BoxingLevel | nul
     const { data: sessions } = await supabase
       .from("workout_sessions")
       .select("accuracy, difficulty")
-      .eq("userId", userId)
+      .eq("user_id", userId)
       .order("completedAt", { ascending: false })
       .limit(10);
 
@@ -311,7 +311,7 @@ export async function getComboRecommendations(userId: string): Promise<string[]>
     const { data, error } = await supabase
       .from("combo_progress")
       .select("comboNotation")
-      .eq("userId", userId)
+      .eq("user_id", userId)
       .order("bestAccuracy", { ascending: true })
       .limit(5);
 
