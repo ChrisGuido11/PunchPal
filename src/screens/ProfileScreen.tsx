@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, ScrollView, Pressable, Alert } from "react-native";
+import { View, Text, ScrollView, Pressable, Alert, Linking } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -143,7 +143,7 @@ export default function ProfileScreen() {
           style: "destructive",
           onPress: async () => {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-            
+
             if (isSupabaseEnabled()) {
               const { data: { user } } = await supabase.auth.getUser();
               if (user) {
@@ -151,16 +151,16 @@ export default function ProfileScreen() {
                 await supabase.from('user_stats').delete().eq('user_id', user.id);
                 await supabase.from('workout_sessions').delete().eq('user_id', user.id);
                 await supabase.from('combo_progress').delete().eq('user_id', user.id);
-                
+
                 // Delete auth account (requires admin privileges in production)
                 // In production, you'd call a server function to handle this
               }
-              
+
               await supabase.auth.signOut();
             }
-            
+
             // Clear all user data
-            useUserStore.setState({ 
+            useUserStore.setState({
               userId: null,
               hasCompletedOnboarding: false,
               boxingLevel: null,
@@ -173,7 +173,7 @@ export default function ProfileScreen() {
               recentlyCompleted: [],
               unlockedAchievements: [],
             });
-            
+
             navigation.reset({
               index: 0,
               routes: [{ name: "Splash" }],
@@ -182,6 +182,24 @@ export default function ProfileScreen() {
         },
       ]
     );
+  };
+
+  const handleOpenPrivacyPolicy = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Linking.openURL("https://punchpal-privacy-policy.lovable.app/");
+    } catch (error) {
+      console.error("Failed to open privacy policy:", error);
+    }
+  };
+
+  const handleOpenSupport = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Linking.openURL("https://punchpalsupport.lovable.app/");
+    } catch (error) {
+      console.error("Failed to open support website:", error);
+    }
   };
 
   const totalWorkouts = workoutHistory.length;
@@ -502,7 +520,7 @@ export default function ProfileScreen() {
           <Text className="text-xl font-bold text-white mb-4">
             Account
           </Text>
-          
+
           {/* Sign Out Button */}
           <Pressable
             onPress={handleSignOut}
@@ -518,7 +536,7 @@ export default function ProfileScreen() {
           {/* Delete Account Button */}
           <Pressable
             onPress={handleDeleteAccount}
-            className="active:opacity-80"
+            className="active:opacity-80 mb-4"
           >
             <View className="bg-black border-2 border-boxing-red rounded-xl py-4 px-6">
               <Text className="text-boxing-red text-center text-base font-bold uppercase tracking-wider">
@@ -527,9 +545,33 @@ export default function ProfileScreen() {
             </View>
           </Pressable>
 
-          <Text className="text-gray-500 text-xs text-center mt-4">
+          <Text className="text-gray-500 text-xs text-center mb-6">
             Deleting your account will permanently remove all your data
           </Text>
+
+          {/* Privacy Policy Button */}
+          <Pressable
+            onPress={handleOpenPrivacyPolicy}
+            className="active:opacity-80 mb-3"
+          >
+            <View className="bg-black border border-gray-600 rounded-xl py-3 px-6">
+              <Text className="text-gray-400 text-center text-sm font-semibold">
+                Privacy Policy
+              </Text>
+            </View>
+          </Pressable>
+
+          {/* Support Button */}
+          <Pressable
+            onPress={handleOpenSupport}
+            className="active:opacity-80"
+          >
+            <View className="bg-black border border-gray-600 rounded-xl py-3 px-6">
+              <Text className="text-gray-400 text-center text-sm font-semibold">
+                Support
+              </Text>
+            </View>
+          </Pressable>
         </View>
       </ScrollView>
     </LinearGradient>
