@@ -7,6 +7,7 @@ import * as Haptics from "expo-haptics";
 import { useUserStore } from "../state/userStore";
 import { generateWorkout } from "../api/workout-generator";
 import WorkoutCard from "../components/WorkoutCard";
+import StreakCard from "../components/StreakCard";
 import PulsingEnergyLoader from "../components/PulsingEnergyLoader";
 import { upsertUserStats } from "../api/database-service";
 import { ensureDailyReminder } from "../utils/notifications";
@@ -155,6 +156,10 @@ export default function HomeScreen({ navigation }: Props) {
 
         {!isGenerating && currentWorkout ? (
           <>
+            <StreakCard
+              currentStreak={currentStreak}
+              longestStreak={longestStreak}
+            />
             <WorkoutCard
               workout={currentWorkout}
               onStartTraining={handleStartTraining}
