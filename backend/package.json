@@ -16,8 +16,8 @@
   "dependencies": {
     "@hono/node-server": "1.12.0",
     "@vibecodeapp/backend-sdk": "^1.0.1",
-    "@vibecodeapp/cloud-studio": "^0.1.6",
-    "@vibecodeapp/proxy": "^2.0.0",
+    "@vibecodeapp/cloud-studio": "^0.2.4",
+    "@vibecodeapp/proxy": "^2.0.3",
     "hono": "4.6.0",
     "zod": "4.1.11"
   }
