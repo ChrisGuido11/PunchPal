@@ -60,3 +60,7 @@
   Why: If package.json is not committed, the package will be lost when the sandbox restarts,
   causing "Cannot find package" errors on the next session.
 </package_management>
+
+<claude-mem-context>
+
+</claude-mem-context>

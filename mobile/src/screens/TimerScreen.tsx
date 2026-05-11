@@ -9,6 +9,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { useUserStore } from "../state/userStore";
 import { checkAchievements } from "../utils/achievements";
+import { logWorkoutSession } from "../api/database-service";
 
 type RootStackParamList = {
   Splash: undefined;
@@ -43,6 +44,9 @@ function TimerScreen({ navigation }: Props) {
   const [currentComboIndex, setCurrentComboIndex] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
+  const [showRating, setShowRating] = useState(false);
+  const [finishedAt, setFinishedAt] = useState<Date | null>(null);
+  const userId = useUserStore((s) => s.userId);
 
   const comboCalloutTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
   const lastComboKeyRef = useRef<string | null>(null);
@@ -58,39 +62,17 @@ function TimerScreen({ navigation }: Props) {
 
   const combo = useMemo(() => combos[currentComboIndex], [combos, currentComboIndex]);
 
-  const buildTips = useCallback((description?: string): string[] => {
-    if (!description) return [];
-    // Split on punctuation to capture concise guidance points.
-    const parts = description
-      .split(/[.;\n]/)
-      .map((p) => p.trim())
-      .filter((p) => p.length > 6)
-      .slice(0, 4);
-
-    const rephrase = (text: string) => {
-      const lowered = text.toLowerCase();
-      if (lowered.startsWith("focus on")) return text.replace(/focus on/i, "focus on");
-      if (lowered.startsWith("keep")) return text.replace(/keep/i, "keep");
-      if (lowered.startsWith("stay")) return text.replace(/stay/i, "stay");
-      if (lowered.startsWith("pivot")) return `pivot and stay balanced`; // small rephrase
-      // Generic supportive prefix to avoid verbatim description.
-      return `remember: ${text}`;
-    };
-
-    const tips = parts.map((p) => {
-      const trimmed = p.replace(/\s+/g, " ").trim();
-      const noTrailing = trimmed.replace(/[.]+$/, "");
-      return rephrase(noTrailing);
-    });
-
-    const uniqueTips: string[] = [];
-    for (const tip of tips) {
-      if (tip && !uniqueTips.includes(tip)) uniqueTips.push(tip);
-      if (uniqueTips.length === 2) break;
-    }
-
-    return uniqueTips;
-  }, []);
+  const formatNotationForSpeech = (notation: string): string =>
+    notation
+      .split("-")
+      .map((part) => {
+        const trimmed = part.trim();
+        if (/^\d+b$/i.test(trimmed)) {
+          return `${trimmed.slice(0, -1)} to the body`;
+        }
+        return trimmed;
+      })
+      .join(", ");
 
   const speak = useCallback((text: string) => {
     Speech.speak(text, {
@@ -113,24 +95,22 @@ function TimerScreen({ navigation }: Props) {
       tenSecondCalledRef.current = false;
       lastBeepSecondRef.current = null;
 
-      const numbers = comboNotation.replace(/-/g, " ");
-      const tips = buildTips(comboDescription);
-      const tip1 = tips[0];
-      const tip2 = tips[1];
+      const numbers = formatNotationForSpeech(comboNotation);
+      const description = comboDescription?.trim();
 
+      // Initial burst — Expo Speech queues utterances, so these play back-to-back.
       speak(comboName);
-      const t1 = setTimeout(() => speak(numbers), 0);
-      const tTip1 = tip1 ? setTimeout(() => speak(tip1), 2500) : null;
-      const t2 = setTimeout(() => speak(numbers), 5000);
-      const tTip2 = tip2 ? setTimeout(() => speak(tip2), 8000) : null;
-      const t3 = setTimeout(() => speak(numbers), 10000);
-      const t4 = setTimeout(() => speak("keep going"), 15000);
+      speak(numbers);
+      if (description) speak(description);
 
-      comboCalloutTimeoutsRef.current = [t1, t2, t3, t4].concat(
-        [tTip1, tTip2].filter((v): v is NodeJS.Timeout => Boolean(v))
-      );
+      // After the intro plays, repeat the notation periodically through the round.
+      const t1 = setTimeout(() => speak(numbers), 25000);
+      const t2 = setTimeout(() => speak(numbers), 40000);
+      const t3 = setTimeout(() => speak("keep going"), 55000);
+
+      comboCalloutTimeoutsRef.current = [t1, t2, t3];
     },
-    [buildTips, clearComboCallouts, speak]
+    [clearComboCallouts, speak]
   );
 
   const playBeep = useCallback(async () => {
@@ -200,10 +180,61 @@ function TimerScreen({ navigation }: Props) {
       newAchievements.forEach((id) => unlockAchievement(id));
     }, 100);
 
-    speak("Amazing work. Workout complete. You are getting sharper every round.");
+    speak("Amazing work. Workout complete. How did that feel?");
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setFinishedAt(completedAt);
+    setShowRating(true);
+    setIsRunning(false);
+  }, [addWorkoutToHistory, currentWorkout, currentStreak, longestStreak, speak, unlockAchievement, unlockedAchievements, workoutHistory]);
+
+  const submitRating = useCallback(
+    async (rating: 1 | 2 | 3) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const completedAt = finishedAt ?? new Date();
+      if (currentWorkout && userId) {
+        // Fire-and-forget — UX shouldn't wait on the network.
+        logWorkoutSession({
+          userId,
+          workoutName: currentWorkout.name,
+          difficulty: currentWorkout.difficulty,
+          duration: currentWorkout.duration,
+          rounds: currentWorkout.rounds,
+          completedAt: completedAt.toISOString(),
+          durationMinutes: Math.round(currentWorkout.duration),
+          combosAttempted: currentWorkout.combos.length,
+          combosCompleted: currentWorkout.combos.length,
+          accuracy: 0,
+          difficultyRating: rating,
+        }).catch(() => {
+          // Local state already updated; cloud sync failure is non-blocking.
+        });
+      }
+      setShowRating(false);
+      navigation.navigate("Home");
+    },
+    [currentWorkout, finishedAt, navigation, userId]
+  );
+
+  const skipRating = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const completedAt = finishedAt ?? new Date();
+    if (currentWorkout && userId) {
+      logWorkoutSession({
+        userId,
+        workoutName: currentWorkout.name,
+        difficulty: currentWorkout.difficulty,
+        duration: currentWorkout.duration,
+        rounds: currentWorkout.rounds,
+        completedAt: completedAt.toISOString(),
+        durationMinutes: Math.round(currentWorkout.duration),
+        combosAttempted: currentWorkout.combos.length,
+        combosCompleted: currentWorkout.combos.length,
+        accuracy: 0,
+      }).catch(() => {});
+    }
+    setShowRating(false);
     navigation.navigate("Home");
-  }, [addWorkoutToHistory, currentWorkout, currentStreak, longestStreak, navigation, speak, unlockAchievement, unlockedAchievements, workoutHistory]);
+  }, [currentWorkout, finishedAt, navigation, userId]);
 
   const startRest = useCallback(() => {
     setPhase("rest");
@@ -329,13 +360,8 @@ function TimerScreen({ navigation }: Props) {
     }
   }, [isPaused, isRunning, phase, playBeep, timeRemaining]);
 
-  useEffect(() => {
-    if (!isRunning || combos.length === 0 || phase !== "work") return;
-    if (timeRemaining % 60 === 0 && timeRemaining !== WORK_DURATION) {
-      setCurrentComboIndex((i) => (i + 1) % combos.length);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
-  }, [combos.length, isRunning, phase, timeRemaining]);
+  // One combo per round — no within-round cycling. The combo advances only
+  // when a new round starts (handled in startNextRound).
 
   const toggleRunning = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -393,16 +419,27 @@ function TimerScreen({ navigation }: Props) {
 
   return (
     <LinearGradient colors={["#000000", "#000000"]} style={{ flex: 1 }}>
-      <View className="flex-1" style={{ paddingTop: insets.top }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          flexGrow: 1,
+          paddingTop: insets.top,
+          paddingBottom: insets.bottom + 16,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Header */}
-        <View className="px-6 py-4">
+        <View className="px-6 py-3 flex-row items-center justify-between">
+          <Text className="text-boxing-gold text-xs font-bold uppercase tracking-widest">
+            {currentWorkout.difficulty}
+          </Text>
           <Text className="text-gray-500 text-sm">Round {currentRound} / {totalRounds}</Text>
         </View>
 
         {/* Main Timer Area */}
         <View className="flex-1 items-center justify-center px-6">
           {/* Phase Indicator */}
-          <View className="mb-8">
+          <View className="mb-5">
             <View className="bg-boxing-red/20 px-6 py-2 rounded-full">
               <Text className="text-boxing-red text-base font-bold uppercase tracking-widest">
                 {phase === "rest" ? "REST" : "WORK"}
@@ -411,42 +448,127 @@ function TimerScreen({ navigation }: Props) {
           </View>
 
           {/* Large Timer */}
-          <Text className="text-[120px] font-black text-white tracking-tight leading-none mb-12">
+          <Text
+            className="text-white font-black tracking-tight leading-none mb-6"
+            style={{ fontSize: 96 }}
+            adjustsFontSizeToFit
+            numberOfLines={1}
+          >
             {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
           </Text>
 
-          {/* Exercise Card */}
-          <View className="w-full bg-[#1A1A1A] rounded-2xl p-6 mb-8">
-            <Text className="text-white text-2xl font-bold mb-2">{combo?.name ?? "---"}</Text>
-            <Text className="text-boxing-red text-lg font-bold mb-3">{combo?.notation ?? "---"}</Text>
-            <Text className="text-gray-400 text-sm leading-5 mb-3">
-              {combo?.description ?? ""}
-            </Text>
-            <Text className="text-gray-500 text-sm">
-              Next: {combos[(currentComboIndex + 1) % combos.length]?.name ?? "---"}
-            </Text>
-          </View>
+          {/* Exercise Card — replaced by REST banner during rest phase */}
+          {phase === "rest" ? (
+            <View className="w-full items-center justify-center mb-6 py-8">
+              <Text
+                className="text-boxing-red font-black tracking-widest"
+                style={{ fontSize: 96, lineHeight: 100 }}
+                adjustsFontSizeToFit
+                numberOfLines={1}
+              >
+                REST
+              </Text>
+              <Text className="text-gray-400 text-sm mt-2" numberOfLines={1}>
+                Next: {combo?.name ?? "---"}
+              </Text>
+            </View>
+          ) : (
+            <View className="w-full bg-[#1A1A1A] rounded-2xl p-5 mb-6">
+              <Text className="text-white text-xl font-bold mb-2" numberOfLines={1}>
+                {combo?.name ?? "---"}
+              </Text>
+              <Text
+                className="text-boxing-red font-black tracking-wider mb-3"
+                style={{ fontSize: 48, lineHeight: 52 }}
+                adjustsFontSizeToFit
+                numberOfLines={1}
+              >
+                {combo?.notation ?? "---"}
+              </Text>
+              <Text className="text-gray-300 text-base leading-6 mb-3">
+                {combo?.description ?? ""}
+              </Text>
+              <Text className="text-gray-500 text-xs" numberOfLines={1}>
+                Next: {combos[(currentComboIndex + 1) % combos.length]?.name ?? "---"}
+              </Text>
+            </View>
+          )}
 
           {/* Pause Button */}
-          <Pressable 
-            onPress={toggleRunning} 
+          <Pressable
+            onPress={toggleRunning}
             className="active:opacity-80"
-            style={{ width: 80, height: 80 }}
+            style={{ width: 72, height: 72 }}
           >
-            <View className="w-20 h-20 bg-boxing-red rounded-full items-center justify-center">
+            <View className="w-[72px] h-[72px] bg-boxing-red rounded-full items-center justify-center">
               <View className="flex-row space-x-1">
                 {isPaused || !isRunning ? (
-                  <View className="w-0 h-0 border-l-[20px] border-l-white border-t-[12px] border-t-transparent border-b-[12px] border-b-transparent ml-1" />
+                  <View className="w-0 h-0 border-l-[18px] border-l-white border-t-[11px] border-t-transparent border-b-[11px] border-b-transparent ml-1" />
                 ) : (
                   <>
-                    <View className="w-2 h-8 bg-white rounded-sm" />
-                    <View className="w-2 h-8 bg-white rounded-sm" />
+                    <View className="w-2 h-7 bg-white rounded-sm" />
+                    <View className="w-2 h-7 bg-white rounded-sm" />
                   </>
                 )}
               </View>
             </View>
           </Pressable>
         </View>
+      </ScrollView>
+
+        {/* Post-Workout Rating Modal */}
+        {showRating && (
+          <View
+            className="absolute inset-0 bg-black/90 items-center justify-center px-6"
+            style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+          >
+            <View className="bg-[#1A1A1A] rounded-3xl w-full" style={{ maxWidth: 400 }}>
+              <View className="px-6 py-5 border-b border-gray-800">
+                <Text className="text-white text-xl font-bold text-center">
+                  Workout Complete
+                </Text>
+                <Text className="text-gray-400 text-sm text-center mt-1">
+                  How was that?
+                </Text>
+              </View>
+              <View className="p-6 space-y-3">
+                <Pressable onPress={() => submitRating(1)} className="active:opacity-90">
+                  <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-gold">
+                    <Text className="text-white text-center text-base font-bold">
+                      Too Easy
+                    </Text>
+                    <Text className="text-gray-400 text-center text-xs mt-1">
+                      Push me harder next time
+                    </Text>
+                  </View>
+                </Pressable>
+                <Pressable onPress={() => submitRating(2)} className="active:opacity-90">
+                  <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-red">
+                    <Text className="text-white text-center text-base font-bold">
+                      Just Right
+                    </Text>
+                    <Text className="text-gray-400 text-center text-xs mt-1">
+                      Challenging but doable
+                    </Text>
+                  </View>
+                </Pressable>
+                <Pressable onPress={() => submitRating(3)} className="active:opacity-90">
+                  <View className="bg-black rounded-xl py-4 px-6 border-2 border-gray-600">
+                    <Text className="text-white text-center text-base font-bold">
+                      Too Hard
+                    </Text>
+                    <Text className="text-gray-400 text-center text-xs mt-1">
+                      Drop the complexity
+                    </Text>
+                  </View>
+                </Pressable>
+                <Pressable onPress={skipRating} className="active:opacity-80 pt-2">
+                  <Text className="text-gray-500 text-center text-sm">Skip</Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Pause Modal Overlay */}
         {isPaused && (
@@ -493,7 +615,6 @@ function TimerScreen({ navigation }: Props) {
             </View>
           </View>
         )}
-      </View>
     </LinearGradient>
   );
 }

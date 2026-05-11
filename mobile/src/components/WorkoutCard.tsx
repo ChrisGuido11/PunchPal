@@ -51,37 +51,50 @@ export default function WorkoutCard({
 
         <View className="bg-boxing-cardBg border-2 border-boxing-red rounded-3xl overflow-hidden">
           <View className="p-6">
-            <View className="mb-6">
-              <Text className="text-3xl font-black text-white mb-1">
-                {workout.name.split(':')[0]}:
-              </Text>
-              <Text className="text-2xl font-black text-white mb-3">
-                {workout.name.split(':')[1]}
-              </Text>
-              <Text className={`text-sm font-semibold ${difficultyColor}`}>
+            <View className="mb-5">
+              <Text
+                className={`text-xs font-bold tracking-widest mb-2 ${difficultyColor}`}
+              >
                 {workout.difficulty.toUpperCase()}
+              </Text>
+              <Text
+                className="text-3xl font-black text-white mb-1"
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {workout.name.split(":")[0]}:
+              </Text>
+              <Text className="text-xl font-bold text-gray-200">
+                {workout.name.split(":").slice(1).join(":").trim()}
               </Text>
             </View>
 
-            <View className="flex-row space-x-4 mb-6">
-              <View className="flex-1 bg-black/30 rounded-xl p-4">
-                <Text className="text-gray-400 text-xs mb-1">Duration</Text>
-                <Text className="text-white text-2xl font-bold">
+            <View className="flex-row justify-center space-x-3 mb-5">
+              <View
+                className="bg-black/30 rounded-xl py-3 items-center"
+                style={{ width: 120 }}
+              >
+                <Text className="text-gray-400 text-[10px] mb-0.5 uppercase tracking-wider">
+                  Duration
+                </Text>
+                <Text
+                  className="text-white text-2xl font-bold"
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                >
                   {workout.duration} min
                 </Text>
               </View>
 
-              <View className="flex-1 bg-black/30 rounded-xl p-4">
-                <Text className="text-gray-400 text-xs mb-1">Rounds</Text>
+              <View
+                className="bg-black/30 rounded-xl py-3 items-center"
+                style={{ width: 120 }}
+              >
+                <Text className="text-gray-400 text-[10px] mb-0.5 uppercase tracking-wider">
+                  Rounds
+                </Text>
                 <Text className="text-white text-2xl font-bold">
                   {workout.rounds}
-                </Text>
-              </View>
-
-              <View className="flex-1 bg-black/30 rounded-xl p-4">
-                <Text className="text-gray-400 text-xs mb-1">Combos</Text>
-                <Text className="text-white text-2xl font-bold">
-                  {workout.combos.length}
                 </Text>
               </View>
             </View>
@@ -89,7 +102,7 @@ export default function WorkoutCard({
             <Pressable onPress={handlePress} className="active:opacity-80">
               <View
                 style={{
-                  backgroundColor: '#000000',
+                  backgroundColor: "#000000",
                   paddingVertical: 18,
                   paddingHorizontal: 32,
                   borderRadius: 16,

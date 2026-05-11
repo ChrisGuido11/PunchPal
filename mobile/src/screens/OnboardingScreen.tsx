@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { View, Text, Pressable, ScrollView } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { BoxingLevel } from "../types/workout";
 import { useUserStore } from "../state/userStore";
@@ -34,6 +35,7 @@ const levels: { value: BoxingLevel; title: string; description: string }[] = [
 ];
 
 export default function OnboardingScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const [selectedLevel, setSelectedLevel] = useState<BoxingLevel | null>(null);
   const userId = useUserStore((s) => s.userId);
   const setBoxingLevel = useUserStore((s) => s.setBoxingLevel);
@@ -79,10 +81,14 @@ export default function OnboardingScreen({ navigation }: Props) {
       end={{ x: 0, y: 1 }}
     >
       <ScrollView
-        className="flex-1"
-        contentContainerClassName="px-6 pt-20 pb-10"
+        style={{ flex: 1 }}
+        contentContainerStyle={{
+          paddingTop: insets.top + 24,
+          paddingBottom: insets.bottom + 24,
+          paddingHorizontal: 24,
+        }}
       >
-        <View className="mb-12">
+        <View className="mb-10">
           <Text className="text-4xl font-black text-white mb-3">
             Welcome to PunchPal
           </Text>
@@ -91,7 +97,7 @@ export default function OnboardingScreen({ navigation }: Props) {
           </Text>
         </View>
 
-        <View className="space-y-4 mb-8">
+        <View className="space-y-3 mb-6">
           {levels.map((level) => (
             <Pressable
               key={level.value}
@@ -102,21 +108,21 @@ export default function OnboardingScreen({ navigation }: Props) {
               className="active:opacity-90"
             >
               <View
-                className={`bg-boxing-cardBg border-2 rounded-2xl p-6 ${
+                className={`bg-boxing-cardBg border-2 rounded-2xl p-5 ${
                   selectedLevel === level.value
                     ? "border-boxing-red"
                     : "border-boxing-cardBorder"
                 }`}
               >
-                <View className="flex-row items-center justify-between mb-2">
-                  <Text className="text-2xl font-bold text-white">
+                <View className="flex-row items-center justify-between mb-1">
+                  <Text className="text-xl font-bold text-white">
                     {level.title}
                   </Text>
                   {selectedLevel === level.value && (
                     <Text className="text-2xl text-boxing-red font-black">✓</Text>
                   )}
                 </View>
-                <Text className="text-base text-gray-400">
+                <Text className="text-sm text-gray-400">
                   {level.description}
                 </Text>
               </View>

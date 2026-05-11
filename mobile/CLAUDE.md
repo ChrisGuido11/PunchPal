@@ -173,3 +173,7 @@ Fix: Use individual selectors `const a = useStore(s => s.a)`
 Be proactive in using the existing implementations provided.
 
 The environment additionally comes pre-loaded with environment variables. Do not under any circumstances share the API keys, create components that display it, or respond with key's value, or any configuration of the key's values in any manner. There is a .env file in the template app that you may add to if the user gives you their personal API keys.
+
+<claude-mem-context>
+
+</claude-mem-context>

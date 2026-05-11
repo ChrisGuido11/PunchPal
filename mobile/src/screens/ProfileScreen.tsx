@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { View, Text, ScrollView, Pressable, Alert, Linking } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -9,6 +9,7 @@ import { useUserStore } from "../state/userStore";
 import { BoxingLevel } from "../types/workout";
 import { ACHIEVEMENTS, getAchievementProgress } from "../utils/achievements";
 import { supabase, isSupabaseEnabled } from "../lib/supabaseClient";
+import { TABLES } from "../lib/tables";
 import { upsertUserStats } from "../api/database-service";
 
 type RootStackParamList = {
@@ -47,6 +48,25 @@ export default function ProfileScreen() {
   const unlockedAchievements = useUserStore((s) => s.unlockedAchievements);
 
   const [isEditingLevel, setIsEditingLevel] = useState(false);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isAnonymous, setIsAnonymous] = useState<boolean>(true);
+
+  useEffect(() => {
+    if (!isSupabaseEnabled()) return;
+    let active = true;
+    const refresh = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (!active) return;
+      setUserEmail(data.user?.email ?? null);
+      setIsAnonymous(data.user?.is_anonymous ?? !data.user?.email);
+    };
+    refresh();
+    const { data: sub } = supabase.auth.onAuthStateChange(() => refresh());
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, []);
 
   const handleLevelChange = async (level: BoxingLevel) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -121,12 +141,17 @@ export default function ProfileScreen() {
             
             navigation.reset({
               index: 0,
-              routes: [{ name: "Auth" }],
+              routes: [{ name: "Splash" }],
             });
           },
         },
       ]
     );
+  };
+
+  const handleSignInPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    navigation.navigate("Auth");
   };
 
   const handleDeleteAccount = async () => {
@@ -148,9 +173,9 @@ export default function ProfileScreen() {
               const { data: { user } } = await supabase.auth.getUser();
               if (user) {
                 // Delete user data from database
-                await supabase.from('user_stats').delete().eq('user_id', user.id);
-                await supabase.from('workout_sessions').delete().eq('user_id', user.id);
-                await supabase.from('combo_progress').delete().eq('user_id', user.id);
+                await supabase.from(TABLES.userStats).delete().eq('user_id', user.id);
+                await supabase.from(TABLES.workoutSessions).delete().eq('user_id', user.id);
+                await supabase.from(TABLES.comboProgress).delete().eq('user_id', user.id);
 
                 // Delete auth account (requires admin privileges in production)
                 // In production, you'd call a server function to handle this
@@ -521,17 +546,41 @@ export default function ProfileScreen() {
             Account
           </Text>
 
-          {/* Sign Out Button */}
-          <Pressable
-            onPress={handleSignOut}
-            className="active:opacity-80 mb-3"
-          >
-            <View className="bg-black border-2 border-boxing-gold rounded-xl py-4 px-6">
-              <Text className="text-boxing-gold text-center text-base font-bold uppercase tracking-wider">
-                Sign Out
+          {isAnonymous ? (
+            <>
+              <Text className="text-gray-400 text-sm mb-3">
+                You are using PunchPal as a guest. Create an account to sync your progress across devices.
               </Text>
-            </View>
-          </Pressable>
+              <Pressable
+                onPress={handleSignInPress}
+                className="active:opacity-80 mb-3"
+              >
+                <View className="bg-black border-2 border-boxing-red rounded-xl py-4 px-6">
+                  <Text className="text-boxing-red text-center text-base font-bold uppercase tracking-wider">
+                    Create Account / Sign In
+                  </Text>
+                </View>
+              </Pressable>
+            </>
+          ) : (
+            <>
+              {userEmail && (
+                <Text className="text-gray-400 text-sm mb-3">
+                  Signed in as {userEmail}
+                </Text>
+              )}
+              <Pressable
+                onPress={handleSignOut}
+                className="active:opacity-80 mb-3"
+              >
+                <View className="bg-black border-2 border-boxing-gold rounded-xl py-4 px-6">
+                  <Text className="text-boxing-gold text-center text-base font-bold uppercase tracking-wider">
+                    Sign Out
+                  </Text>
+                </View>
+              </Pressable>
+            </>
+          )}
 
           {/* Delete Account Button */}
           <Pressable

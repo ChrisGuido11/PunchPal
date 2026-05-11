@@ -1,4 +1,5 @@
 import { supabase, isSupabaseEnabled } from "../lib/supabaseClient";
+import { TABLES } from "../lib/tables";
 import { BoxingLevel } from "../types/workout";
 
 export interface WorkoutSession {
@@ -14,6 +15,7 @@ export interface WorkoutSession {
   combosCompleted: number;
   accuracy: number; // 0-100
   notes?: string;
+  difficultyRating?: number; // 1 = too easy, 2 = just right, 3 = too hard
 }
 
 export interface UserStats {
@@ -46,7 +48,7 @@ export async function getUserStats(userId: string): Promise<UserStats | null> {
 
   try {
     const { data, error } = await supabase
-      .from("user_stats")
+      .from(TABLES.userStats)
       .select("*")
       .eq("user_id", userId)
       .single();
@@ -98,7 +100,7 @@ export async function upsertUserStats(
     };
     
     const { data, error } = await supabase
-      .from("user_stats")
+      .from(TABLES.userStats)
       .upsert(dbRecord, { onConflict: "user_id" })
       .select()
       .single();
@@ -145,16 +147,17 @@ export async function logWorkoutSession(
       combos_completed: session.combosCompleted,
       accuracy: session.accuracy,
       notes: session.notes,
+      difficulty_rating: session.difficultyRating,
     };
 
     const { data, error } = await supabase
-      .from("workout_sessions")
+      .from(TABLES.workoutSessions)
       .insert([dbRecord])
       .select()
       .single();
 
     if (error) throw error;
-    
+
     return data ? {
       id: data.id,
       userId: data.user_id,
@@ -168,6 +171,7 @@ export async function logWorkoutSession(
       combosCompleted: data.combos_completed,
       accuracy: data.accuracy,
       notes: data.notes,
+      difficultyRating: data.difficulty_rating ?? undefined,
     } : null;
   } catch (error) {
     console.error("Error logging workout session:", error);
@@ -184,14 +188,28 @@ export async function getWorkoutHistory(
 
   try {
     const { data, error } = await supabase
-      .from("workout_sessions")
+      .from(TABLES.workoutSessions)
       .select("*")
-      .eq("userId", userId)
-      .order("completedAt", { ascending: false })
+      .eq("user_id", userId)
+      .order("completed_at", { ascending: false })
       .limit(limit);
 
     if (error) throw error;
-    return data || [];
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      userId: row.user_id,
+      workoutName: row.workout_name,
+      difficulty: row.difficulty,
+      duration: row.duration,
+      rounds: row.rounds,
+      completedAt: row.completed_at,
+      durationMinutes: row.duration_minutes,
+      combosAttempted: row.combos_attempted,
+      combosCompleted: row.combos_completed,
+      accuracy: row.accuracy,
+      notes: row.notes,
+      difficultyRating: row.difficulty_rating ?? undefined,
+    }));
   } catch (error) {
     console.error("Error fetching workout history:", error);
     return [];
@@ -211,51 +229,66 @@ export async function updateComboProgress(
   try {
     // First try to get existing combo progress
     const { data: existing } = await supabase
-      .from("combo_progress")
+      .from(TABLES.comboProgress)
       .select("*")
-      .eq("userId", userId)
-      .eq("comboNotation", comboNotation)
+      .eq("user_id", userId)
+      .eq("combo_notation", comboNotation)
       .single();
 
     const now = new Date().toISOString();
+    let row: any = null;
 
     if (existing) {
       // Update existing
       const { data, error } = await supabase
-        .from("combo_progress")
+        .from(TABLES.comboProgress)
         .update({
-          timesAttempted: existing.timesAttempted + 1,
-          timesCompleted: completed ? existing.timesCompleted + 1 : existing.timesCompleted,
-          bestAccuracy: Math.max(existing.bestAccuracy, accuracy),
-          lastAttemptDate: now,
+          times_attempted: existing.times_attempted + 1,
+          times_completed: completed
+            ? existing.times_completed + 1
+            : existing.times_completed,
+          best_accuracy: Math.max(existing.best_accuracy, accuracy),
+          last_attempt_date: now,
         })
         .eq("id", existing.id)
         .select()
         .single();
 
       if (error) throw error;
-      return data;
+      row = data;
     } else {
       // Create new
       const { data, error } = await supabase
-        .from("combo_progress")
+        .from(TABLES.comboProgress)
         .insert([
           {
-            userId,
-            comboNotation,
-            comboName,
-            timesAttempted: 1,
-            timesCompleted: completed ? 1 : 0,
-            bestAccuracy: accuracy,
-            lastAttemptDate: now,
+            user_id: userId,
+            combo_notation: comboNotation,
+            combo_name: comboName,
+            times_attempted: 1,
+            times_completed: completed ? 1 : 0,
+            best_accuracy: accuracy,
+            last_attempt_date: now,
           },
         ])
         .select()
         .single();
 
       if (error) throw error;
-      return data;
+      row = data;
     }
+
+    if (!row) return null;
+    return {
+      id: row.id,
+      userId: row.user_id,
+      comboNotation: row.combo_notation,
+      comboName: row.combo_name,
+      timesAttempted: row.times_attempted,
+      timesCompleted: row.times_completed,
+      bestAccuracy: row.best_accuracy,
+      lastAttemptDate: row.last_attempt_date,
+    };
   } catch (error) {
     console.error("Error updating combo progress:", error);
     return null;
@@ -271,10 +304,10 @@ export async function evaluateLevelUp(userId: string): Promise<BoxingLevel | nul
     if (!stats) return null;
 
     const { data: sessions } = await supabase
-      .from("workout_sessions")
+      .from(TABLES.workoutSessions)
       .select("accuracy, difficulty")
-      .eq("userId", userId)
-      .order("completedAt", { ascending: false })
+      .eq("user_id", userId)
+      .order("completed_at", { ascending: false })
       .limit(10);
 
     if (!sessions || sessions.length === 0) return null;
@@ -309,14 +342,14 @@ export async function getComboRecommendations(userId: string): Promise<string[]>
 
   try {
     const { data, error } = await supabase
-      .from("combo_progress")
-      .select("comboNotation")
-      .eq("userId", userId)
-      .order("bestAccuracy", { ascending: true })
+      .from(TABLES.comboProgress)
+      .select("combo_notation")
+      .eq("user_id", userId)
+      .order("best_accuracy", { ascending: true })
       .limit(5);
 
     if (error) throw error;
-    return (data || []).map((d: any) => d.comboNotation);
+    return (data || []).map((d: any) => d.combo_notation);
   } catch (error) {
     console.error("Error getting combo recommendations:", error);
     return [];

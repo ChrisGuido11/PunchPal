@@ -39,3 +39,11 @@ android/
 
 # Expo log
 expo.log
+
+# Env files (never commit secrets — set EAS dashboard vars for builds)
+.env
+.env.*
+!.env.example
+
+# Supabase CLI local cache
+supabase/.temp/

@@ -3,6 +3,7 @@ import { View, Text, Image, Animated } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { useUserStore } from "../state/userStore";
+import { initializeUser } from "../api/user-service";
 
 type RootStackParamList = {
   Splash: undefined;
@@ -17,12 +18,16 @@ export default function SplashScreen({ navigation }: Props) {
   const hasCompletedOnboarding = useUserStore(
     (s) => s.hasCompletedOnboarding
   );
-  const userId = useUserStore((s) => s.userId);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnim = useRef(new Animated.Value(0.8)).current;
 
   useEffect(() => {
-    // Start animations with smooth, slower fade
+    // Kick off anonymous Supabase sign-in in the background so cloud sync works
+    // without forcing the user through a sign-up gate.
+    initializeUser().catch(() => {
+      // Ignore — app still works locally if Supabase is unreachable.
+    });
+
     Animated.parallel([
       Animated.timing(fadeAnim, {
         toValue: 1,
@@ -39,15 +44,13 @@ export default function SplashScreen({ navigation }: Props) {
     const timer = setTimeout(() => {
       if (hasCompletedOnboarding) {
         navigation.replace("MainTabs");
-      } else if (userId) {
-        navigation.replace("Onboarding");
       } else {
-        navigation.replace("Auth");
+        navigation.replace("Onboarding");
       }
     }, 2000);
 
     return () => clearTimeout(timer);
-  }, [hasCompletedOnboarding, userId, navigation, fadeAnim, scaleAnim]);
+  }, [hasCompletedOnboarding, navigation, fadeAnim, scaleAnim]);
 
   return (
     <LinearGradient

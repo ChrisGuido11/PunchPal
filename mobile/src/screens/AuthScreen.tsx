@@ -32,8 +32,8 @@ export default function AuthScreen({ navigation }: Props) {
     }
 
     if (!isSupabaseEnabled()) {
-      Alert.alert("Notice", "Supabase is not configured. Using anonymous mode.");
-      navigation.replace("Onboarding");
+      Alert.alert("Notice", "Supabase is not configured. Account features are disabled.");
+      navigation.goBack();
       return;
     }
 
@@ -45,10 +45,15 @@ export default function AuthScreen({ navigation }: Props) {
       let result;
 
       if (mode === "signup") {
-        result = await supabase.auth.signUp({
-          email,
-          password,
-        });
+        // If the user is currently anonymous, upgrade their existing session
+        // via updateUser() — this preserves their UID and all guest progress.
+        // Falls back to signUp() only when no anon session exists.
+        const { data: currentUserData } = await supabase.auth.getUser();
+        if (currentUserData.user?.is_anonymous) {
+          result = await supabase.auth.updateUser({ email, password });
+        } else {
+          result = await supabase.auth.signUp({ email, password });
+        }
       } else {
         result = await supabase.auth.signInWithPassword({
           email,
@@ -65,7 +70,7 @@ export default function AuthScreen({ navigation }: Props) {
       if (result.data.user) {
         useUserStore.setState({ userId: result.data.user.id });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        navigation.replace("Onboarding");
+        navigation.goBack();
       }
     } catch (err) {
       setError("An error occurred. Please try again.");

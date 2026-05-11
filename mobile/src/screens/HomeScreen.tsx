@@ -113,37 +113,18 @@ export default function HomeScreen({ navigation }: Props) {
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
-          paddingTop: insets.top + 20,
-          paddingBottom: insets.bottom + 20,
+          paddingTop: insets.top + 12,
+          paddingBottom: insets.bottom + 16,
         }}
       >
-        <View className="px-6 mb-6">
-          <View className="flex-row items-center justify-between mb-4">
-            <View className="flex-1">
-              <View className="flex-row items-center mb-2">
-                <Image
-                  source={require("../../assets/logo.png")}
-                  style={{ width: 64, height: 64, marginRight: 12 }}
-                  resizeMode="contain"
-                />
-                <Text className="text-4xl font-black text-white">
-                  PunchPal
-                </Text>
-              </View>
-              <Text className="text-lg text-boxing-gold">
-                Your personalized workout is ready
-              </Text>
-            </View>
-            {currentStreak > 0 && (
-              <View className="bg-boxing-red/20 border-2 border-boxing-red rounded-2xl px-4 py-3 items-center">
-                <Text className="text-3xl font-black text-boxing-red">
-                  {currentStreak}
-                </Text>
-                <Text className="text-xs text-boxing-gold font-bold uppercase tracking-wider">
-                  STREAK
-                </Text>
-              </View>
-            )}
+        <View className="px-6 mb-4">
+          <View className="flex-row items-center">
+            <Image
+              source={require("../../assets/logo.png")}
+              style={{ width: 44, height: 44, marginRight: 10 }}
+              resizeMode="contain"
+            />
+            <Text className="text-3xl font-black text-white">PunchPal</Text>
           </View>
         </View>
         {isGenerating && <PulsingEnergyLoader />}
@@ -166,34 +147,31 @@ export default function HomeScreen({ navigation }: Props) {
             />
 
             {!isGenerating && boxingLevel ? (
-              <View className="px-6 mt-4">
+              <View className="px-6 mt-8">
                 <Pressable onPress={handleRegenerate} className="active:opacity-80">
                   <View className="relative">
                     <View
                       style={{
                         position: "absolute",
-                        top: -4,
-                        left: -4,
-                        right: -4,
-                        bottom: -4,
-                        borderRadius: 20,
+                        top: -3,
+                        left: -3,
+                        right: -3,
+                        bottom: -3,
+                        borderRadius: 18,
                         opacity: 0.3,
                       }}
                     >
                       <LinearGradient
                         colors={["#DC2626", "#D4AF37"]}
-                        style={{
-                          flex: 1,
-                          borderRadius: 20,
-                        }}
+                        style={{ flex: 1, borderRadius: 18 }}
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 1 }}
                       />
                     </View>
                     <View
-                      style={{ backgroundColor: "#000000", borderRadius: 16, paddingVertical: 14, paddingHorizontal: 16 }}
+                      style={{ backgroundColor: "#000000", borderRadius: 14, paddingVertical: 11, paddingHorizontal: 14 }}
                     >
-                      <Text className="text-white text-center text-lg font-bold">
+                      <Text className="text-white text-center text-base font-bold">
                         Get Fresh Workout
                       </Text>
                     </View>
