@@ -535,6 +535,11 @@ Deno.serve(async (req: Request) => {
     } else {
       workoutData.combos = validCombos;
     }
+
+    // Duration = total work time only (matches user mental model: each round
+    // is 3 min of punching, so a 4-round workout is "12 minutes" of work).
+    // Rest periods are not counted in this number.
+    workoutData.duration = Math.max(1, workoutData.rounds * 3);
     return new Response(JSON.stringify(workoutData), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

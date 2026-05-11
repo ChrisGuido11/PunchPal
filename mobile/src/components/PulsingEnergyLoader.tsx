@@ -1,157 +1,50 @@
-import React, { useEffect, useRef } from "react";
-import { View, Text, Animated, StyleSheet } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import React, { useEffect, useRef, useState } from "react";
+import { View, Text, Image } from "react-native";
 
+// State-driven breathing loop. Uses setInterval + useState to force React
+// re-renders that update inline style.transform.scale — the only path that
+// reliably animates on this stack (RN 0.81 + New Arch + Reanimated 4 +
+// Worklets + NativeWind v4 + React 19).
 export default function PulsingEnergyLoader() {
-  // Create three animated values for the three concentric rings
-  const pulse1 = useRef(new Animated.Value(0)).current;
-  const pulse2 = useRef(new Animated.Value(0)).current;
-  const pulse3 = useRef(new Animated.Value(0)).current;
+  const [, setTick] = useState(0);
+  const directionRef = useRef(1);
+  const phaseRef = useRef(0);
 
   useEffect(() => {
-    // Create pulsing animation for each ring with staggered start times
-    const createPulseAnimation = (animatedValue: Animated.Value, delay: number) => {
-      return Animated.loop(
-        Animated.sequence([
-          Animated.delay(delay),
-          Animated.parallel([
-            Animated.timing(animatedValue, {
-              toValue: 1,
-              duration: 1800,
-              useNativeDriver: true,
-            }),
-          ]),
-          Animated.timing(animatedValue, {
-            toValue: 0,
-            duration: 0,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-    };
+    const id = setInterval(() => {
+      let next = phaseRef.current + directionRef.current * 0.04;
+      if (next >= 1) {
+        directionRef.current = -1;
+        next = 1;
+      } else if (next <= 0) {
+        directionRef.current = 1;
+        next = 0;
+      }
+      phaseRef.current = next;
+      setTick((t) => t + 1);
+    }, 50);
+    return () => clearInterval(id);
+  }, []);
 
-    // Start all three pulse animations with staggered delays
-    const animation1 = createPulseAnimation(pulse1, 0);
-    const animation2 = createPulseAnimation(pulse2, 600);
-    const animation3 = createPulseAnimation(pulse3, 1200);
-
-    animation1.start();
-    animation2.start();
-    animation3.start();
-
-    return () => {
-      animation1.stop();
-      animation2.stop();
-      animation3.stop();
-    };
-  }, [pulse1, pulse2, pulse3]);
-
-  // Interpolate scale and opacity for each ring
-  const createRingStyle = (pulseValue: Animated.Value) => ({
-    transform: [
-      {
-        scale: pulseValue.interpolate({
-          inputRange: [0, 1],
-          outputRange: [0.5, 2.5],
-        }),
-      },
-    ],
-    opacity: pulseValue.interpolate({
-      inputRange: [0, 0.2, 1],
-      outputRange: [0.8, 0.6, 0],
-    }),
-  });
+  const phase = phaseRef.current;
+  const scale = 0.85 + phase * 0.3;
+  const opacity = 0.55 + phase * 0.45;
 
   return (
-    <View className="items-center justify-center py-20">
-      {/* Glassmorphic background container */}
-      <View className="items-center justify-center mb-8">
-        <View style={styles.energyContainer}>
-          {/* Ring 3 - Outermost (red) */}
-          <Animated.View style={[styles.ring, createRingStyle(pulse3)]}>
-            <LinearGradient
-              colors={["#DC2626", "#FF0000"]}
-              style={styles.ringGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-          </Animated.View>
-
-          {/* Ring 2 - Middle (red-gold blend) */}
-          <Animated.View style={[styles.ring, createRingStyle(pulse2)]}>
-            <LinearGradient
-              colors={["#DC2626", "#D4AF37"]}
-              style={styles.ringGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-          </Animated.View>
-
-          {/* Ring 1 - Innermost (gold) */}
-          <Animated.View style={[styles.ring, createRingStyle(pulse1)]}>
-            <LinearGradient
-              colors={["#D4AF37", "#F4E5C2"]}
-              style={styles.ringGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-          </Animated.View>
-
-          {/* Center core - static glow */}
-          <View style={styles.centerCore}>
-            <LinearGradient
-              colors={["#D4AF37", "#DC2626"]}
-              style={styles.coreGradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            />
-          </View>
-        </View>
+    <View className="flex-1 items-center justify-center">
+      <View style={{ marginBottom: 28, transform: [{ scale }], opacity }}>
+        <Image
+          source={require("../../assets/logo.png")}
+          style={{ width: 160, height: 160 }}
+          resizeMode="contain"
+        />
       </View>
-
-      {/* Text content */}
-      <Text className="text-2xl font-bold text-white mt-4 mb-2">
+      <Text className="text-2xl font-bold text-white mb-2">
         Preparing Your Workout
       </Text>
       <Text className="text-base text-gray-400 text-center px-8">
-        Coach is crafting your personalized training plan...
+        Coach is crafting your personalized training plan…
       </Text>
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  energyContainer: {
-    width: 150,
-    height: 150,
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
-  },
-  ring: {
-    position: "absolute",
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    overflow: "hidden",
-  },
-  ringGradient: {
-    flex: 1,
-    borderRadius: 40,
-  },
-  centerCore: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    overflow: "hidden",
-    shadowColor: "#D4AF37",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.9,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  coreGradient: {
-    flex: 1,
-    borderRadius: 12,
-  },
-});

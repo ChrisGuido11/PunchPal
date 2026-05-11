@@ -113,6 +113,7 @@ export default function HomeScreen({ navigation }: Props) {
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
+          flexGrow: 1,
           paddingTop: insets.top + 12,
           paddingBottom: insets.bottom + 16,
         }}

@@ -210,7 +210,7 @@ function TimerScreen({ navigation }: Props) {
         });
       }
       setShowRating(false);
-      navigation.navigate("Home");
+      navigation.goBack();
     },
     [currentWorkout, finishedAt, navigation, userId]
   );
@@ -233,7 +233,7 @@ function TimerScreen({ navigation }: Props) {
       }).catch(() => {});
     }
     setShowRating(false);
-    navigation.navigate("Home");
+    navigation.goBack();
   }, [currentWorkout, finishedAt, navigation, userId]);
 
   const startRest = useCallback(() => {
@@ -382,7 +382,12 @@ function TimerScreen({ navigation }: Props) {
 
   const endWorkout = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    navigation.goBack();
+    Speech.stop();
+    clearComboCallouts();
+    setIsRunning(false);
+    setIsPaused(false);
+    setFinishedAt(new Date());
+    setShowRating(true);
   };
 
   const watchLesson = async () => {

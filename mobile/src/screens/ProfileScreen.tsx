@@ -50,6 +50,7 @@ export default function ProfileScreen() {
   const [isEditingLevel, setIsEditingLevel] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState<boolean>(true);
+  const [showRatingPreview, setShowRatingPreview] = useState(false);
 
   useEffect(() => {
     if (!isSupabaseEnabled()) return;
@@ -598,6 +599,21 @@ export default function ProfileScreen() {
             Deleting your account will permanently remove all your data
           </Text>
 
+          {/* DEV — temporary button to preview the post-workout rating modal */}
+          <Pressable
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowRatingPreview(true);
+            }}
+            className="active:opacity-80 mb-3"
+          >
+            <View className="bg-[#1A1A1A] border border-gray-700 rounded-xl py-3 px-6">
+              <Text className="text-gray-400 text-center text-xs font-bold uppercase tracking-widest">
+                DEV: Preview Rating Modal
+              </Text>
+            </View>
+          </Pressable>
+
           {/* Privacy Policy Button */}
           <Pressable
             onPress={handleOpenPrivacyPolicy}
@@ -623,6 +639,83 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
       </ScrollView>
+
+      {showRatingPreview && (
+        <View
+          className="absolute inset-0 bg-black/90 items-center justify-center px-6"
+          style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+        >
+          <View className="bg-[#1A1A1A] rounded-3xl w-full" style={{ maxWidth: 400 }}>
+            <View className="px-6 py-5 border-b border-gray-800">
+              <Text className="text-white text-xl font-bold text-center">
+                Workout Complete
+              </Text>
+              <Text className="text-gray-400 text-sm text-center mt-1">
+                How was that?
+              </Text>
+              <Text className="text-boxing-gold text-[10px] text-center mt-2 uppercase tracking-widest">
+                DEV PREVIEW
+              </Text>
+            </View>
+            <View className="p-6 space-y-3">
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setShowRatingPreview(false);
+                }}
+                className="active:opacity-90"
+              >
+                <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-gold">
+                  <Text className="text-white text-center text-base font-bold">
+                    Too Easy
+                  </Text>
+                  <Text className="text-gray-400 text-center text-xs mt-1">
+                    Push me harder next time
+                  </Text>
+                </View>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setShowRatingPreview(false);
+                }}
+                className="active:opacity-90"
+              >
+                <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-red">
+                  <Text className="text-white text-center text-base font-bold">
+                    Just Right
+                  </Text>
+                  <Text className="text-gray-400 text-center text-xs mt-1">
+                    Challenging but doable
+                  </Text>
+                </View>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setShowRatingPreview(false);
+                }}
+                className="active:opacity-90"
+              >
+                <View className="bg-black rounded-xl py-4 px-6 border-2 border-gray-600">
+                  <Text className="text-white text-center text-base font-bold">
+                    Too Hard
+                  </Text>
+                  <Text className="text-gray-400 text-center text-xs mt-1">
+                    Drop the complexity
+                  </Text>
+                </View>
+              </Pressable>
+              <Pressable
+                onPress={() => setShowRatingPreview(false)}
+                className="active:opacity-80 pt-2"
+              >
+                <Text className="text-gray-500 text-center text-sm">Skip</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      )}
     </LinearGradient>
   );
 }

@@ -299,6 +299,13 @@ supabase functions deploy punchpal-generate-workout --project-ref zeskhorwddxyjh
 
 ## What's Been Done (Recent History)
 
+**Since last PROGRESS sync:**
+- **Dev preview button** in Profile → Account section: "DEV: Preview Rating Modal" opens the rating UI standalone (no Supabase write) for quick design iteration. Easy to remove later.
+- **Early-exit rating capture**: tapping "Exit Workout" in the pause modal now triggers the same rating modal instead of immediately going back. Skip + 3 difficulty buttons available. Logs to `punchpal_workout_sessions` so Claude gets the signal from incomplete sessions too — but does NOT add to local workoutHistory, so partial workouts don't count toward streak/totals/achievements.
+- **Fixed navigation crash**: `navigation.navigate("Home")` was throwing "no navigator handles this" — Home is a tab inside MainTabs, not a stack screen. Switched to `goBack()` in `submitRating`/`skipRating`.
+- **Loader rewrite**: PulsingEnergyLoader rebuilt to use the boxing-glove logo with breathing scale + opacity animation. Centered via `flex-1` + `flexGrow: 1` on ScrollView. After 6 failed attempts using `Animated`, `Reanimated 4`, worklets babel plugin, and various combinations — discovered the host stack (RN 0.81 + New Arch + Reanimated 4 + Worklets + NativeWind v4 + React 19) silently breaks both `Animated.loop` and Reanimated worklets in this surface. Solution: pure `useState` + `setInterval` driven re-renders applying inline `transform.scale`. Bypasses every animation library entirely.
+- **Duration math fixed**: EF was returning AI's loose duration estimate (e.g., 30 min for a 6-round workout). Now overrides server-side: `duration = rounds × 3` (just work time, matches user mental model where each round = 3 min).
+
 **This session/week:**
 - Switched workout generation from Grok (xAI) to Claude Sonnet 4.6 via Supabase Edge Function (key never enters mobile bundle)
 - Multi-tenant prefixing: tables `punchpal_*`, function `punchpal-generate-workout`
@@ -352,6 +359,7 @@ supabase functions deploy punchpal-generate-workout --project-ref zeskhorwddxyjh
 - **`combos.length === rounds`** — one combo per round, server reconciles drift, math matches what user experiences
 - **Post-workout rating instead of per-combo** — minimum friction; per-combo would be too tappy
 - **No combo persistence for "don't repeat" enforcement** — relies on workout-name list + temperature variety; revisit if user feels staleness
+- **Partial workouts ARE rated but DON'T count toward stats** — early exits feed Claude difficulty signal (Supabase) but skip local history/streak/achievements; only completed workouts contribute to progression
 
 ---
 
