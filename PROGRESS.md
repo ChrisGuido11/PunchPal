@@ -1,8 +1,8 @@
 # PunchPal — Progress
 
-_Last Updated: 2026-05-11_
+_Last Updated: 2026-05-11 (PM session — AdMob, voice upgrade, Profile cleanup, EAS setup)_
 
-PunchPal is an AI-powered boxing coach for iOS that   i dont have aaron on my generates personalized workouts using Claude Sonnet 4.6, tracks user progression across 9 tiers (raw beginner → pro), and delivers verbal cues during timed rounds.
+PunchPal is an AI-powered boxing coach for iOS that generates personalized workouts using Claude Sonnet 4.6, tracks user progression across 9 tiers (raw beginner → pro), and delivers verbal cues during timed rounds.
 
 ---
 
@@ -32,7 +32,7 @@ The mobile app is what ships. The `backend/` folder is a leftover Vibecode templ
 - **Audio:** `expo-av` + `expo-speech` for combo callouts and beeps
 - **Haptics:** `expo-haptics` throughout
 - **Backend client:** `@supabase/supabase-js` 2.87
-- **Monetization (wired but not gated):** `react-native-purchases` (RevenueCat)
+- **Monetization:** `react-native-google-mobile-ads` 16.3.x (AdMob — banner + interstitials). RevenueCat REMOVED. App is free forever, ads-only.
 
 ### Server (Supabase Edge Functions)
 - **Runtime:** Deno (Supabase Edge Runtime)
@@ -48,10 +48,15 @@ The mobile app is what ships. The `backend/` folder is a leftover Vibecode templ
 
 ## Project Identity
 
-- **App name:** PunchPal
+- **App name on App Store:** PunchPal AI Coach
+- **App name in `app.json`:** PunchPal
 - **Bundle ID:** `com.punchpal.app`
-- **Slug:** `punchpal`
+- **Slug:** `punchpal-ai-coach` (matches Expo project)
 - **APP_PREFIX:** `punchpal` (full word, matches other prefixed Stratega apps' convention)
+- **ASC Apple ID:** `6756529569`
+- **EAS project ID:** `61f19f38-1c99-48db-b8a7-d53d0238a8a5` (`@crisguido/punchpal-ai-coach`)
+- **Latest published App Store version:** 1.0.1 (Ready for Distribution)
+- **Next target version:** 1.1.0 (build 2) — this session's work
 
 ---
 
@@ -198,7 +203,7 @@ Tier derived from `currentLevel × nextLevelProgress`:
 | 8 | Mid advanced | 6–7 punch, signature pro patterns (Crawford/Inoue/Loma), Philly shell, guard traps |
 | 9 | Pro | 7–8 punch with multi-range transitions, full fight scenarios |
 
-### Critical rules (currently 11)
+### Critical rules (currently 12)
 1. Punch-count per combo is mandatory (level-specific ranges, enforced server-side)
 2. Every description must include ≥1 defensive movement AND ≥1 footwork cue
 3. Each combo feels different and realistic for the level
@@ -223,13 +228,13 @@ Mixed → median complexity with fresh combinations.
 
 ### Screens
 - **SplashScreen** — animated logo, kicks off `initializeUser()` for anonymous Supabase session, routes to Onboarding or MainTabs based on `hasCompletedOnboarding`
-- **OnboardingScreen** — boxing-level selection (beginner/intermediate/advanced), saves to Supabase
-- **AuthScreen** — optional sign-up/sign-in, opened from Profile. On anonymous-user sign-up, calls `supabase.auth.updateUser({email, password})` to **upgrade** the anon UID (preserves all guest progress). Sign-in uses standard `signInWithPassword`. No email confirmation flow (project has confirmations disabled).
-- **HomeScreen** — workout card (PunchPal logo + title + workout details), StreakCard, WorkoutCard, "Get Fresh Workout" regenerate button
-- **TimerScreen** — round timer (3 min work / 1 min rest), combo card with notation (`b` suffix expanded as "to the body" for speech), full description, voice callouts, beep at last 5s of each phase, post-workout rating modal (Too Easy / Just Right / Too Hard / Skip)
-- **ProfileScreen** — boxing level changer, streaks, training stats, achievements, account section (shows "Create Account / Sign In" if anonymous, email + "Sign Out" if signed in), delete account, privacy policy, support
-- **PaywallScreen** — RevenueCat-wired (not currently gated; app is free)
-- **WorkoutLibraryScreen** — currently hidden via commented-out route
+- **OnboardingScreen** — two-step flow. Step 1: boxing-level selection (beginner/intermediate/advanced), saves to Supabase. Step 2: optional voice-upgrade tip recommending the **Nathan** premium iOS voice with 4-step Settings instructions, "Open Settings" deep link (`Linking.openSettings()`), and a "Test current voice" preview button. Step 2 auto-skips if user already has a premium English male voice installed.
+- **AuthScreen** — optional sign-up/sign-in, opened from Profile. On anonymous-user sign-up, calls `supabase.auth.updateUser({email, password})` to **upgrade** the anon UID (preserves all guest progress). Sign-in uses standard `signInWithPassword`. No email confirmation flow.
+- **HomeScreen** — PunchPal logo + title, StreakCard, WorkoutCard, "Get Fresh Workout" regenerate button, **AdMob banner** absolutely positioned above the tab bar via `useBottomTabBarHeight()`. Regenerate button triggers a preloaded AdMob interstitial then loads a fresh workout.
+- **TimerScreen** — round timer (3 min work / 1 min rest), combo card with notation (`b` suffix expanded as "to the body" for speech), full description, voice callouts via the coach-voice picker, beep at last 5s of each phase, post-workout rating modal (Too Easy / Just Right / Too Hard / Skip), post-rating AdMob interstitial before navigating Home (suppressed on early-exit flow).
+- **ProfileScreen** — boxing level changer, streaks, training stats (workouts / rounds / minutes), workout history with real workout names, account section (anon vs signed-in), delete account, privacy policy link, support link, dev preview button for rating modal. Achievements UI removed; tracking still runs silently in the store.
+- **WorkoutLibraryScreen** — implemented but route commented out in `RootNavigator.tsx`
+- **(PaywallScreen DELETED — RevenueCat removed entirely)**
 
 ### Auth flow
 - Anonymous-first. Splash kicks off `supabase.auth.signInAnonymously()` in background.
@@ -244,18 +249,35 @@ Mixed → median complexity with fresh combinations.
    - Ensures auth session exists (creates anonymous if not)
    - Fetches `userStats` + last 5 `workout_sessions` (with ratings)
    - Invokes `punchpal-generate-workout` EF
-   - Falls back to hardcoded canned workouts (in `workout-generator.ts`) on any error
+   - Falls back to hardcoded canned workouts on any error
 
 ### Timer flow
 - One combo per round (no within-round cycling)
 - Voice cadence per combo: name → notation → full description (queued sequentially by Expo Speech) → notation repeats at 25s/40s → "keep going" at 55s
-- Speech `formatNotationForSpeech()` expands `b` suffix to "to the body" so TTS reads naturally
+- **Coach voice picker** (`Speech.getAvailableVoicesAsync()` on mount): selects highest-quality male-coach voice in priority order — generic Siri male (Voice 1, `siri_male` identifier pattern) → Nathan → Aaron → Evan → Tom → Reed → Fred → Daniel → first non-default → platform default. Falls back gracefully on devices with no premium voices installed.
+- Speech rate slowed to `0.95` for coach cadence; pitch left at default
+- `formatNotationForSpeech()` expands `b` suffix to "to the body" so TTS reads naturally
 - Beep at restRemaining 1–5 and timeRemaining last 5 of each minute
 - Rest phase replaces combo card with big red "REST" + small "Next: <combo>" hint
-- After last round: rating modal → `logWorkoutSession()` to Supabase → navigate Home
+- After last round: rating modal → `logWorkoutSession()` to Supabase → **AdMob interstitial** (suppressed on early-exit) → navigate Home
 
 ### Multi-tenant table access
 `mobile/src/lib/tables.ts` exports `TABLES` constant. All `.from()` calls use `TABLES.userStats`, `TABLES.workoutSessions`, `TABLES.comboProgress`. No hardcoded table-name strings in code.
+
+### AdMob integration
+- **Library:** `react-native-google-mobile-ads` 16.3.x
+- **Placements:**
+  - Banner (anchored adaptive) on Home, absolutely positioned above the tab bar
+  - Interstitial when "Get Fresh Workout" tapped (preloaded; falls through if not loaded)
+  - Interstitial after rating submit/skip on workout completion (suppressed on early-exit)
+- **Frequency cap:** 30s minimum between interstitials, shared across all hook instances via module-scope timestamp
+- **Non-personalized:** all requests set `requestNonPersonalizedAdsOnly: true`. No ATT prompt, no `expo-tracking-transparency`.
+- **Real IDs:** publisher `8632074296834726`, baked into `mobile/src/lib/ads.ts` and `mobile/app.json` plugin config.
+- **`FORCE_TEST_ADS` toggle** in `mobile/src/lib/ads.ts` — flip to `true` to force Google test ads even in production builds (replaces the Xcode device-ID capture workflow; user is Windows-only with no Xcode). MUST be `false` before App Store ship.
+- **Graceful Expo Go degradation:** `react-native-google-mobile-ads` loaded via `require()` inside try/catch. Native module absent → `adsModule` stays `null` → every public function no-ops, banner returns null, `useInterstitial.show()` immediately fires the dismiss callback. Lets Expo Go iteration keep working post-AdMob-install.
+- **Outstanding before full fill rate:**
+  - Publish `app-ads.txt` at marketing site root with `google.com, pub-8632074296834726, DIRECT, f08c47fec0942fa0`
+  - Update App Privacy questionnaire in App Store Connect → declare AdMob SDK data types under "Third-Party Advertising"
 
 ### Boxing level → tier display
 On Home, the level appears inside the WorkoutCard as the eyebrow above the workout name (colored by difficulty).
@@ -275,14 +297,27 @@ EXPO_PUBLIC_SUPABASE_URL=https://zeskhorwddxyjhhnpgsa.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=<jwt>
 ```
 
-### EAS (when building):
-Set the same two `EXPO_PUBLIC_*` vars in EAS dashboard with **Plain text** visibility (not Secret — `EXPO_PUBLIC_*` are inlined into JS at build time).
+### EAS env vars
+Set the same two `EXPO_PUBLIC_*` vars in EAS dashboard with **Plain text** visibility (not Secret — `EXPO_PUBLIC_*` are inlined into JS at build time). The existing `punchpal-ai-coach` project already has them set.
 
 ### Local dev
 ```
 cd mobile && npx expo start --clear
 ```
-Then scan QR with **Expo Go 54.0.2** on iOS. Cannot use Expo Go SDK 55+ — App Store hasn't shipped that yet. Memory rule saved for this gotcha (`~/.claude/projects/.../memory/feedback_expo_sdk_targeting.md`).
+Then scan QR with **Expo Go 54.0.2** on iOS. Cannot use Expo Go SDK 55+ — App Store hasn't shipped that yet. Memory rule saved for this gotcha.
+
+**Expo Go runs the app WITHOUT ads** — the AdMob native module isn't in the Go binary. Everything else (voice, onboarding, timer, profile) works normally. For full ad behavior, build via EAS.
+
+### EAS project
+- **Project:** `@crisguido/punchpal-ai-coach` — https://expo.dev/accounts/crisguido/projects/punchpal-ai-coach
+- **Project ID:** `61f19f38-1c99-48db-b8a7-d53d0238a8a5`
+- **`eas.json` profiles:** `development` (developmentClient + internal), `preview` (internal), `production` (autoIncrement, App Store distribution). Submit profile pre-filled with `ascAppId: "6756529569"`.
+- **`cli.appVersionSource: "remote"`** — EAS manages buildNumber centrally; `version` in app.json stays the source of truth.
+- **Production iOS build + auto-submit to TestFlight:**
+  ```
+  cd mobile && eas build --profile production --platform ios --auto-submit
+  ```
+  First run is interactive — prompts for Apple Developer login + app-specific password (generate at appleid.apple.com → Sign-In and Security → App-Specific Passwords).
 
 ### Deploying EF changes
 ```
@@ -299,54 +334,75 @@ supabase functions deploy punchpal-generate-workout --project-ref zeskhorwddxyjh
 
 ## What's Been Done (Recent History)
 
-**Since last PROGRESS sync:**
-- **Dev preview button** in Profile → Account section: "DEV: Preview Rating Modal" opens the rating UI standalone (no Supabase write) for quick design iteration. Easy to remove later.
-- **Early-exit rating capture**: tapping "Exit Workout" in the pause modal now triggers the same rating modal instead of immediately going back. Skip + 3 difficulty buttons available. Logs to `punchpal_workout_sessions` so Claude gets the signal from incomplete sessions too — but does NOT add to local workoutHistory, so partial workouts don't count toward streak/totals/achievements.
-- **Fixed navigation crash**: `navigation.navigate("Home")` was throwing "no navigator handles this" — Home is a tab inside MainTabs, not a stack screen. Switched to `goBack()` in `submitRating`/`skipRating`.
-- **Loader rewrite**: PulsingEnergyLoader rebuilt to use the boxing-glove logo with breathing scale + opacity animation. Centered via `flex-1` + `flexGrow: 1` on ScrollView. After 6 failed attempts using `Animated`, `Reanimated 4`, worklets babel plugin, and various combinations — discovered the host stack (RN 0.81 + New Arch + Reanimated 4 + Worklets + NativeWind v4 + React 19) silently breaks both `Animated.loop` and Reanimated worklets in this surface. Solution: pure `useState` + `setInterval` driven re-renders applying inline `transform.scale`. Bypasses every animation library entirely.
-- **Duration math fixed**: EF was returning AI's loose duration estimate (e.g., 30 min for a 6-round workout). Now overrides server-side: `duration = rounds × 3` (just work time, matches user mental model where each round = 3 min).
+**This session (2026-05-11 PM — AdMob + voice upgrade + Profile cleanup + EAS setup):**
+- **AdMob integration** — added `react-native-google-mobile-ads` 16.3.x with banner on Home and two interstitials (pre-generation + post-workout). 30s shared frequency cap, non-personalized requests, no ATT prompt.
+- **`FORCE_TEST_ADS` toggle** — flag in `mobile/src/lib/ads.ts` that forces Google test ads in production builds when set to `true`. Replaces the Xcode device-ID capture workflow because user is Windows-only.
+- **Graceful Expo Go degradation for AdMob** — conditional `require()` of GMA with try/catch in `ads.ts`. Native module unavailable → all ad code no-ops → app keeps running in Expo Go without ads. Lets fast dev iteration coexist with a native ad module.
+- **RevenueCat removed entirely** — deleted `revenuecatClient.ts`, `PaywallScreen.tsx`, both RC packages from `package.json`, stripped `isPremium` from `Achievement` type + seed data, removed PRO badge UI from Profile. App is now free forever with ads-only monetization.
+- **Real AdMob IDs wired** — publisher `8632074296834726`. All 6 IDs (2 App IDs + 4 ad units) in `app.json` plugin config and `mobile/src/lib/ads.ts`. Production builds auto-switch from Google test IDs to real IDs via `__DEV__`.
+- **Coach voice picker** in `TimerScreen.tsx` — `Speech.getAvailableVoicesAsync()` on mount picks highest-quality male voice. Priority: generic Siri male (Voice 1) → Nathan → Aaron → Evan → Tom → Reed → Fred → Daniel → first non-default → platform default. Rate slowed to 0.95. Replaces the robotic default Samantha.
+- **Onboarding voice tip (step 2)** — added second onboarding step recommending **Nathan** premium iOS voice. 4-step Settings path, "Open Settings" button, "Test current voice" preview. Auto-skips if a premium English male voice is already installed.
+- **Profile screen cleanup** —
+  - Removed entire Achievements section UI (store-side tracking kept silent in case we want it back)
+  - Workout history shows the real workout name (e.g. "Iron Foundation: Pivot Patrol") instead of "Workout #N"
+  - Workout name renders on its own row, full width — no truncation, wraps if needed
+  - Metadata (rounds / duration / date) moved to second row below the title
+  - **Bug fix:** training stats card and history rows were dividing `duration / 60`, but `duration` is already stored in minutes (per `rounds × 3` rule). A 9-minute workout showed as 0. Now displays `duration` directly.
+- **EAS project re-linked** — initial `eas init --force` mistakenly created a new empty `punchpal` project. Caught and fixed by changing `slug: "punchpal" → "punchpal-ai-coach"` and clearing `projectId`; user ran `eas init` which auto-detected and linked the existing project (ID `61f19f38-1c99-48db-b8a7-d53d0238a8a5`).
+- **Version bump to 1.1.0 (build 2)** in `app.json`. Added `ITSAppUsesNonExemptEncryption: false` to iOS infoPlist to skip the export-compliance prompt on every submit. Updated `eas.json` submit profile with `ascAppId: "6756529569"`.
+- **`mobile/README.md` rewritten** — obsolete Vibecode content replaced with current state + brand identity + a "Marketing website requirements (FOR LOVABLE)" section that explicitly includes the `app-ads.txt` deployment requirement so it can be handed to Lovable.
 
-**This session/week:**
-- Switched workout generation from Grok (xAI) to Claude Sonnet 4.6 via Supabase Edge Function (key never enters mobile bundle)
+**Previous sessions:**
+- Dev preview button in Profile → Account section for the rating modal
+- Early-exit rating capture (Exit Workout from pause modal → rating modal → logs to Supabase but skips local history)
+- Fixed navigation crash from `navigation.navigate("Home")` — Home is a tab, not a stack screen; switched to `goBack()`
+- Loader rewrite: PulsingEnergyLoader uses setInterval-driven inline transform scale after Animated/Reanimated 4/worklets all failed in the RN 0.81 + New Arch + Reanimated 4 + Worklets + NativeWind v4 + React 19 surface
+- Duration math fixed in EF: `duration = rounds × 3` (server-side override)
+- Switched workout generation from Grok (xAI) to Claude Sonnet 4.6 via Supabase Edge Function
 - Multi-tenant prefixing: tables `punchpal_*`, function `punchpal-generate-workout`
-- Fixed pre-existing camelCase column name bugs in `database-service.ts`
-- Decoupled from Vibecode template — removed patches, `@vibecodeapp/sdk`, version overrides, Vibecode metro wrapper
-- Migrated to Expo SDK 54 (originally 53; tried 55, downgraded because App Store Expo Go max is 54)
-- Removed auth gate; anonymous-first with optional sign-up from Profile (preserves UID via `updateUser`)
+- Decoupled from Vibecode template
+- Migrated to Expo SDK 54
+- Removed auth gate; anonymous-first with optional sign-up
 - Notation `b` suffix for body shots, voice expands to "to the body"
-- Tier-aware prompt (9 tiers from raw beginner to pro)
-- Post-workout rating modal (Too Easy / Just Right / Too Hard); feedback fed back into next generation
-- Enriched defensive/footwork vocabulary including catch-and-shoot, absorb-and-rip, parry-and-cross
-- Universal principles block (range, eye discipline, breathing, setup-vs-commit, rhythm, loading the hip)
-- `combos.length === rounds` enforced — one combo per round, no within-round cycling
-- WorkoutCard responsive redesign: training level inside card (eyebrow above name), Duration + Rounds boxes only, centered fixed-width pill style
-- Timer screen "REST" banner during rest phase replacing combo card
+- Tier-aware prompt (9 tiers)
+- Post-workout rating modal feeds into next generation
+- Enriched defensive/footwork vocabulary
+- Universal principles block in system prompt
+- `combos.length === rounds` enforced
+- WorkoutCard responsive redesign
+- Timer "REST" banner during rest phase
 
-**Earlier work (visible in `changelog.txt`):**
-- Original Vibecode-template generation in Dec 2025
-- Various iterations through Feb 2026
+**Earlier work (visible in `changelog.txt`):** Original Vibecode-template generation in Dec 2025, various iterations through Feb 2026.
 
 ---
 
 ## Known Issues / TODO
+
+### Outstanding before v1.1.0 ships smoothly
+- **Run production build & submit** — `eas build --profile production --platform ios --auto-submit` (interactive Apple login on first run)
+- **Publish `app-ads.txt`** on marketing site root with `google.com, pub-8632074296834726, DIRECT, f08c47fec0942fa0`. AdMob fill rate throttled until live and crawled.
+- **Update App Privacy questionnaire** in App Store Connect → PunchPal AI Coach → App Privacy. Declare AdMob's data types under "Third-Party Advertising".
+- **Stale `extra.grokApiKey` reference in `app.json`** — leftover from Vibecode; harmless but worth deleting next time app.json is edited
+- **Delete orphan empty Expo project** `@crisguido/punchpal` (mistakenly created during `eas init --force`). Settings → Delete Project in the dashboard.
 
 ### Not yet wired but schema-ready
 - `combo_progress` table — never written to. Would enable per-combo struggle detection without rating UI.
 - `workout_sessions.accuracy` — always 0; no input mechanism (boxers shadow-box, can't auto-measure)
 
 ### Vibecode leftovers (non-blocking)
-- `mobile/src/api/image-generation.ts` — hits `api.vibecodeapp.com` (Vibecode's hosted image gen endpoint, not in use anywhere)
-- `mobile/src/api/transcribe-audio.ts` — same pattern (not in use)
+- `mobile/src/api/image-generation.ts` — hits `api.vibecodeapp.com`, not in use anywhere
+- `mobile/src/api/transcribe-audio.ts` — same pattern, not in use
 - `mobile/src/api/chat-service.ts` — wraps Grok/OpenAI clients, not invoked anywhere
 
 ### Cosmetic
-- The `WorkoutLibraryScreen` is implemented but route is commented out
+- `WorkoutLibraryScreen` is implemented but route is commented out
 - Onboarding doesn't ask the user how many years of training they have (only level)
 
 ### Architectural ideas (discussed, not built)
 - DB-driven technique vocabulary (move per-level defense/footwork strings into a Supabase table for live edits)
 - Weekly Claude curator job that proposes prompt refinements based on aggregate rating distribution
 - Prompt caching on the EF (stable boxing-knowledge prefix) for ~80% latency reduction
+- OpenAI TTS (`tts-1-hd` with "onyx") pre-generated at workout-creation time — escalation path if iOS premium voices still feel robotic
 
 ---
 
@@ -358,8 +414,14 @@ supabase functions deploy punchpal-generate-workout --project-ref zeskhorwddxyjh
 - **JWT verification ON for EF** — anonymous sessions still authenticate via gateway; secure-by-default
 - **`combos.length === rounds`** — one combo per round, server reconciles drift, math matches what user experiences
 - **Post-workout rating instead of per-combo** — minimum friction; per-combo would be too tappy
-- **No combo persistence for "don't repeat" enforcement** — relies on workout-name list + temperature variety; revisit if user feels staleness
-- **Partial workouts ARE rated but DON'T count toward stats** — early exits feed Claude difficulty signal (Supabase) but skip local history/streak/achievements; only completed workouts contribute to progression
+- **No combo persistence for "don't repeat" enforcement** — relies on workout-name list + temperature variety
+- **Partial workouts ARE rated but DON'T count toward stats** — early exits feed Claude difficulty signal (Supabase) but skip local history/streak/achievements
+- **AdMob-only monetization, no RevenueCat, no paywalls** — user explicitly chose free-forever-with-ads over freemium. RevenueCat removed wholesale rather than left dormant.
+- **Non-personalized ads only (no ATT prompt)** — chose cleaner first-run experience over higher CPMs. Revisit if revenue underperforms.
+- **`FORCE_TEST_ADS` boolean toggle** — replaces the standard "capture device ID via Xcode console" flow because user is Windows-only with no Xcode access
+- **Conditional `require()` pattern for native AdMob module** — preserves Expo Go iteration speed; static GMA imports crash Expo Go via `TurboModuleRegistry.getEnforcing`
+- **Coach voice priority: generic Siri male first, then named voices starting with Nathan** — user confirmed Voice 1 sounds best on their device but is unnamed, so picker tries Voice 1 first while onboarding tip recommends Nathan (a real name users can find in Settings)
+- **Achievements UI removed but underlying tracking kept** — user wanted the visual section gone; the achievement system in the store still runs silently, ready to re-render later
 
 ---
 
@@ -367,6 +429,10 @@ supabase functions deploy punchpal-generate-workout --project-ref zeskhorwddxyjh
 
 Saved to user-global memory (`~/.claude/projects/<...>/memory/`):
 - **Expo SDK targeting**: never `expo@latest` for Expo-Go-tested projects; verify App Store version via iTunes lookup API first
+- **Coach voice priority on user's iPhone**: Siri Voice 1 (generic male) beats Nathan premium; Aaron is NOT installed on this device
+- **Native modules + Expo Go**: when adding GMA / RevenueCat / etc. to a project still tested via Expo Go, wrap require() in try/catch and guard everything — static imports trigger TurboModule crashes
+- **`FORCE_TEST_ADS` toggle in PunchPal**: must flip to `false` before App Store submission; documented because user is Windows-only and skips device-ID capture
+- **User is Windows-only — never suggest Xcode / Mac / Apple Devices flows**: relevant across all Stratega projects; for iOS debugging prefer in-app debug UI, build-time flags, EAS dashboard logs, or Settings → Privacy → Analytics Data
 
 ---
 
@@ -379,6 +445,10 @@ Saved to user-global memory (`~/.claude/projects/<...>/memory/`):
 | Add a new table column | new migration in `mobile/supabase/migrations/` + deploy temp EF to apply |
 | Adjust mobile UI for a screen | `mobile/src/screens/` |
 | Change voice cadence | `scheduleComboCallouts` in `TimerScreen.tsx` |
+| Change which coach voice gets picked | `preferOrder` array + `pickSiriMale` in `TimerScreen.tsx` |
+| Toggle test ads for personal TestFlight testing | flip `FORCE_TEST_ADS` in `mobile/src/lib/ads.ts` |
+| Change ad placements / frequency cap | `mobile/src/lib/ads.ts` + call-sites in `HomeScreen.tsx` / `TimerScreen.tsx` |
 | Update progression tiers | `computeTier()` in the EF |
 | Deploy EF | `supabase functions deploy punchpal-generate-workout --project-ref zeskhorwddxyjhhnpgsa` |
-| Run locally | `cd mobile && npx expo start --clear`, scan with Expo Go iOS |
+| Run locally (no ads) | `cd mobile && npx expo start --clear`, scan with Expo Go iOS |
+| Build for TestFlight | `cd mobile && eas build --profile production --platform ios --auto-submit` |

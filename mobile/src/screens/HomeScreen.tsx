@@ -16,7 +16,7 @@ import { ensureDailyReminder } from "../utils/notifications";
 import { BoxingLevel } from "../types/workout";
 import { INTERSTITIAL_AD_UNIT_ID, useInterstitial } from "../lib/ads";
 
-const BANNER_RESERVED_HEIGHT = 60;
+const BANNER_RESERVED_HEIGHT = 90;
 
 type RootStackParamList = {
   Timer: undefined;
@@ -124,7 +124,7 @@ export default function HomeScreen({ navigation }: Props) {
         contentContainerStyle={{
           flexGrow: 1,
           paddingTop: insets.top + 12,
-          paddingBottom: BANNER_RESERVED_HEIGHT + 16,
+          paddingBottom: tabBarHeight + BANNER_RESERVED_HEIGHT + 16,
         }}
       >
         <View className="px-6 mb-4">

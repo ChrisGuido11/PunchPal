@@ -1,11 +1,302 @@
-WARN  SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/th3rdwave/react-native-safe-area-context
- LOG  Upserting user stats for userId: 4c55f1b6-d5a1-4583-beb9-ab04c3eb01ad
- LOG  Upserting user stats for userId: 474fce6f-71f2-4472-992d-1d574438ae01
- LOG  User stats synced
- LOG  User initialized: 4c55f1b6-d5a1-4583-beb9-ab04c3eb01ad
- LOG  User stats synced
- LOG  User initialized: 474fce6f-71f2-4472-992d-1d574438ae01
- ERROR  [Invariant Violation: TurboModuleRegistry.getEnforcing(...): 'RNGoogleMobileAdsModule' could not be found. Verify that a module by this name is registered in the native binary.]
- ERROR  [Invariant Violation: TurboModuleRegistry.getEnforcing(...): 'RNGoogleMobileAdsModule' could not be found. Verify that a module by this name is registered in the native binary.]
- ERROR  [Invariant Violation: TurboModuleRegistry.getEnforcing(...): 'RNGoogleMobileAdsModule' could not be found. Verify that a module by this name is registered in the native binary.]
- ERROR  [TypeError: Cannot read property 'useInterstitial' of undefined]
+Using Expo modules
+[Expo] Enabling modular headers for pod ExpoModulesCore
+[Expo] Enabling modular headers for pod SDWebImage
+[Expo] Enabling modular headers for pod React-RCTAppDelegate
+[Expo] Enabling modular headers for pod React-RCTFabric
+[Expo] Enabling modular headers for pod ReactAppDependencyProvider
+[Expo] Enabling modular headers for pod React-Core
+[Expo] Enabling modular headers for pod ReactCodegen
+[Expo] Enabling modular headers for pod RCTRequired
+[Expo] Enabling modular headers for pod RCTTypeSafety
+[Expo] Enabling modular headers for pod ReactCommon
+[Expo] Enabling modular headers for pod React-NativeModulesApple
+[Expo] Enabling modular headers for pod Yoga
+[Expo] Enabling modular headers for pod React-Fabric
+[Expo] Enabling modular headers for pod React-graphics
+[Expo] Enabling modular headers for pod React-utils
+[Expo] Enabling modular headers for pod React-featureflags
+[Expo] Enabling modular headers for pod React-debug
+[Expo] Enabling modular headers for pod React-ImageManager
+[Expo] Enabling modular headers for pod React-rendererdebug
+[Expo] Enabling modular headers for pod React-jsi
+[Expo] Enabling modular headers for pod React-renderercss
+[Expo] Enabling modular headers for pod hermes-engine
+[Expo] Enabling modular headers for pod glog
+[Expo] Enabling modular headers for pod boost
+[Expo] Enabling modular headers for pod DoubleConversion
+[Expo] Enabling modular headers for pod fast_float
+[Expo] Enabling modular headers for pod fmt
+[Expo] Enabling modular headers for pod RCT-Folly
+[Expo] Enabling modular headers for pod SocketRocket
+[Expo] Enabling modular headers for pod expo-dev-menu-interface
+[Expo] Enabling modular headers for pod EXManifests
+[Expo] Enabling modular headers for pod EXUpdatesInterface
+[Expo] Enabling modular headers for pod expo-dev-menu
+[Expo] Enabling modular headers for pod React-jsinspector
+[Expo] Enabling modular headers for pod expo-dev-launcher
+[Expo] Enabling modular headers for pod SDWebImageAVIFCoder
+[Expo] Enabling modular headers for pod SDWebImageSVGCoder
+[Expo] Enabling modular headers for pod SDWebImageWebPCoder
+[Expo] Enabling modular headers for pod libavif
+[Expo] Enabling modular headers for pod EXImageLoader
+[Expo] Enabling modular headers for pod EASClient
+SK_GRAPHITE: OFF (Graphite symbols not found in libskia)
+[Lottie React Native] Using install_modules_dependencies
+react-native-ios-context-menu
+ - reactNativeTargetVersion: 0.81.5
+ - fabric_enabled: false
+ - linkage:
+react-native-ios-utilities
+ - reactNativeTargetVersion: 0.81.5
+ - reactNativeTargetVersionOverride: 
+ - fabric_enabled: false
+ - linkage: 
+[react-native-mmkv] Thank you for using react-native-mmkv ❤️
+[react-native-mmkv] If you enjoy using react-native-mmkv, please consider sponsoring this project: https://github.com/sponsors/mrousavy
+Found 27 modules for target `PunchPal`
+link_native_modules! {:ios_packages=>[{:configurations=>[], :name=>"@react-native-async-storage/async-storage", :root=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-async-storage/async-storage", :path=>"../node_modules/@react-native-async-storage/async-storage", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-async-storage/async-storage/RNCAsyncStorage.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"@react-native-clipboard/clipboard", :root=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-clipboard/clipboard", :path=>"../node_modules/@react-native-clipboard/clipboard", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-clipboard/clipboard/RNCClipboard.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"@react-native-community/datetimepicker", :root=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-community/datetimepicker", :path=>"../node_modules/@react-native-community/datetimepicker", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-community/datetimepicker/RNDateTimePicker.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"@react-native-community/netinfo", :root=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-community/netinfo", :path=>"../node_modules/@react-native-community/netinfo", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-community/netinfo/react-native-netinfo.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"@react-native-community/slider", :root=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-community/slider", :path=>"../node_modules/@react-native-community/slider", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-community/slider/react-native-slider.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"@react-native-masked-view/masked-view", :root=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-masked-view/masked-view", :path=>"../node_modules/@react-native-masked-view/masked-view", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-masked-view/masked-view/RNCMaskedView.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"@react-native-menu/menu", :root=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-menu/menu", :path=>"../node_modules/@react-native-menu/menu", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-menu/menu/react-native-menu.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"@react-native-picker/picker", :root=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-picker/picker", :path=>"../node_modules/@react-native-picker/picker", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-picker/picker/RNCPicker.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"@react-native-segmented-control/segmented-control", :root=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-segmented-control/segmented-control", :path=>"../node_modules/@react-native-segmented-control/segmented-control", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/@react-native-segmented-control/segmented-control/react-native-segmented-control.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"@shopify/react-native-skia", :root=>"/Users/expo/workingdir/build/mobile/node_modules/@shopify/react-native-skia", :path=>"../node_modules/@shopify/react-native-skia", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/@shopify/react-native-skia/react-native-skia.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"expo", :root=>"/Users/expo/workingdir/build/mobile/node_modules/expo", :path=>"../node_modules/expo", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/expo/Expo.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"lottie-react-native", :root=>"/Users/expo/workingdir/build/mobile/node_modules/lottie-react-native", :path=>"../node_modules/lottie-react-native", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/lottie-react-native/lottie-react-native.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-gesture-handler", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-gesture-handler", :path=>"../node_modules/react-native-gesture-handler", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-gesture-handler/RNGestureHandler.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-get-random-values", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-get-random-values", :path=>"../node_modules/react-native-get-random-values", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-get-random-values/react-native-get-random-values.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-ios-context-menu", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-ios-context-menu", :path=>"../node_modules/react-native-ios-context-menu", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-ios-context-menu/react-native-ios-context-menu.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-ios-utilities", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-ios-utilities", :path=>"../node_modules/react-native-ios-utilities", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-ios-utilities/react-native-ios-utilities.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-keyboard-controller", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-keyboard-controller", :path=>"../node_modules/react-native-keyboard-controller", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-keyboard-controller/react-native-keyboard-controller.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-mmkv", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-mmkv", :path=>"../node_modules/react-native-mmkv", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-mmkv/react-native-mmkv.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-google-mobile-ads", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-google-mobile-ads", :path=>"../node_modules/react-native-google-mobile-ads", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-google-mobile-ads/RNGoogleMobileAds.podspec", :script_phases=>[{"name"=>"[RNGoogleMobileAds] Configuration", "path"=>"./ios_config.sh", "execution_position"=>"after_compile", "input_files"=>["$(BUILT_PRODUCTS_DIR)/$(INFOPLIST_PATH)"]}]}, {:configurations=>[], :name=>"react-native-pager-view", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-pager-view", :path=>"../node_modules/react-native-pager-view", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-pager-view/react-native-pager-view.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-reanimated", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-reanimated", :path=>"../node_modules/react-native-reanimated", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-reanimated/RNReanimated.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-safe-area-context", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-safe-area-context", :path=>"../node_modules/react-native-safe-area-context", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-safe-area-context/react-native-safe-area-context.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-screens", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-screens", :path=>"../node_modules/react-native-screens", :podspec_path=>"/Users/expo/workingdir/bu
+ild/mobile/node_modules/react-native-screens/RNScreens.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-svg", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-svg", :path=>"../node_modules/react-native-svg", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-svg/RNSVG.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-view-shot", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-view-shot", :path=>"../node_modules/react-native-view-shot", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-view-shot/react-native-view-shot.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-webview", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-webview", :path=>"../node_modules/react-native-webview", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-webview/react-native-webview.podspec", :script_phases=>[]}, {:configurations=>[], :name=>"react-native-worklets", :root=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-worklets", :path=>"../node_modules/react-native-worklets", :podspec_path=>"/Users/expo/workingdir/build/mobile/node_modules/react-native-worklets/RNWorklets.podspec", :script_phases=>[]}], :ios_project_root_path=>"/Users/expo/workingdir/build/mobile/ios", :react_native_path=>"../node_modules/react-native"}
+SK_GRAPHITE: OFF (Graphite symbols not found in libskia)
+[Lottie React Native] Using install_modules_dependencies
+react-native-ios-context-menu
+ - reactNativeTargetVersion: 0.81.5
+ - fabric_enabled: false
+ - linkage:
+react-native-ios-utilities
+ - reactNativeTargetVersion: 0.81.5
+ - reactNativeTargetVersionOverride: 
+ - fabric_enabled: false
+ - linkage: 
+[react-native-mmkv] Thank you for using react-native-mmkv ❤️
+[react-native-mmkv] If you enjoy using react-native-mmkv, please consider sponsoring this project: https://github.com/sponsors/mrousavy
+Adding a custom script phase for Pod RNGoogleMobileAds: [RNGoogleMobileAds] Configuration
+Auto-linking React Native modules for target `PunchPal`: RNCAsyncStorage, RNCClipboard, RNCMaskedView, RNCPicker, RNDateTimePicker, RNGestureHandler, RNGoogleMobileAds, RNReanimated, RNSVG, RNScreens, RNWorklets, lottie-react-native, react-native-get-random-values, react-native-ios-context-menu, react-native-ios-utilities, react-native-keyboard-controller, react-native-menu, react-native-mmkv, react-native-netinfo, react-native-pager-view, react-native-safe-area-context, react-native-segmented-control, react-native-skia, react-native-slider, react-native-view-shot, and react-native-webview
+Framework build type is static framework
+[ReactNativeDependencies] Setting up ReactNativeDependencies...
+[ReactNativeDependencies] Building from source: false
+[ReactNativeDependencies] Using release tarball
+[ReactNativeDependencies] Using tarball from URL: https://repo1.maven.org/maven2/com/facebook/react/react-native-artifacts/0.81.5/react-native-artifacts-0.81.5-reactnative-dependencies-debug.tar.gz
+% Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+Dload  Upload   Total   Spent    Left  Speed
+
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+23 18.3M   23 4334k    0     0  53.8M      0 --:--:-- --:--:-- --:--:-- 53.5M
+100 18.3M  100 18.3M    0     0  89.7M      0 --:--:-- --:--:-- --:--:-- 89.4M
+% Total    % Received % Xferd  Average Speed   Time    Time     Ti
+me  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+100  9.9M  100  9.9M    0     0  85.9M      0 --:--:-- --:--:--
+--:--:-- 86.1M
+[ReactNativeDependencies] Source: {:http=>"https://repo1.maven.org/maven2/com/facebook/react/react-native-artifacts/0.81.5/react-native-artifacts-0.81.5-reactnative-dependencies-debug.tar.gz"}
+[ReactNativeCore] Setting up ReactNativeCore...
+[ReactNativeCore] Building from source: false
+[ReactNativeCore] Using tarball from URL: https://repo1.maven.org/maven2/com/facebook/react/react-native-artifacts/0.81.5/react-native-artifacts-0.81.5-reactnative-core-debug.tar.gz
+% Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+Dload  Upload   Total   Spent    Left  Speed
+
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+78 78.5M   78 61.9M    0     0  91.4M      0 --:--:-- --:--:-- --:--:-- 91.4M
+100 78.5M  100 78.5M    0     0  95.1M      0 --:--:
+-- --:--:-- --:--:-- 95.0M
+% Total    % Received % Xferd  Average Speed   Time    Time     Time
+Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+100 26.3M  100 26.3M    0     0  92.4M      0 --:--:-- -
+-:--:-- --:--:-- 92.6M
+[ReactNativeCore] Source: {:http=>"https://repo1.maven.org/maven2/com/facebook/react/react-native-artifacts/0.81.5/react-native-artifacts-0.81.5-reactnative-core-debug.tar.gz"}
+Configuring the target with the New Architecture
+[ReactNativeCore] Using React Native Core and React Native Dependencies prebuilt versions.
+[36m[1m[Codegen][0m Analyzing /Users/expo/workingdir/build/mobile/package.json[0m
+[36m[1m[Codegen][0m [33mSearching for codegen-enabled libraries in the app.[0m
+[36m[1m[Codegen][0m [33mThe "codegenConfig" field is not defined in package.json. Assuming there is nothing to generate at the app level.[0m
+[36m[1m[Codegen][0m [33mSearching for codegen-enabled libraries in react-native.config.js[0m
+[36m[1m[Codegen][0m Found @react-native-async-storage/async-storage[0m
+[36m[1m[Codegen][0m Found @react-native-clipboard/clipboard[0m
+[36m[1m[Codegen][0m Found @react-native-community/datetimepicker[0m
+[36m[1m[Codegen][0m Found @react-native-community/slider[0m
+[36m[1m[Codegen][0m Found @react-native-menu/menu[0m
+[36m[1m[Codegen][0m Found @react-native-picker/picker[0m
+[36m[1m[Codegen][0m Found @shopify/react-native-skia[0m
+[36m[1m[Codegen][0m Found lottie-react-native[0m
+[36m[1m[Codegen][0m Found react-native-gesture-handler[0m
+[36m[1m[Codegen][0m Found react-native-ios-context-menu[0m
+[36m[1m[Codegen][0m Found react-native-ios-utilities[0m
+[36m[1m[Codegen][0m Found react-native-keyboard-controller[0m
+[36m[1m[Codegen][0m Found react-native-mmkv[0m
+[36m[1m[Codegen][0m Found react-native-google-mobile-ads[0m
+[36m[1m[Codegen][0m Found react-native-pager-view[0m
+[36m[1m[Codegen][0m Found react-native-reanimated[0m
+[36m[1m[Codegen][0m Found react-native-safe-area-context[0m
+[36m[1m[Codegen][0m Found react-native-screens[0m
+[36m[1m[Codegen][0m Found react-native-svg[0m
+[36m[1m[Codegen][0m Found react-native-view-shot[0m
+[36m[1m[Codegen][0m Found react-native-webview[0m
+[36m[1m[Codegen][0m Found react-native-worklets[0m
+[36m[1m[Codegen][0m Processing rnasyncstorage[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, macos, tvos, visionos for rnasyncstorage[0m
+[36m[1m[Codegen][0m Processing rnclipboard[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, macos, tvos, visionos for rnclipboard[0m
+[36m[1m[Codegen][0m Processing RNDateTimePickerCGen[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, visionos for RNDateTimePickerCGen[0m
+[36m[1m[Codegen][0m Processing RNCSlider[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, visionos for RNCSlider[0m
+[36m[1m[Codegen][0m Processing RNMenuViewSpec[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, visionos for RNMenuViewSpec[0m
+[36m[1m[Codegen][0m Processing rnpicker[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, macos, tvos for rnpicker[0m
+[36m[1m[Codegen][0m Processing rnskia[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, macos, tvos for rnskia[0m
+[36m[1m[Codegen][0m Processing lottiereactnative[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, macos, tvos, visionos for lottiereactnative[0m
+[36m[1m[Codegen][0m Processing rngesturehandler_codegen[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, macos, tvos, visionos for rngesturehandler_codegen[0m
+[36m[1m[Codegen][0m Processing RNIContextMenuViewSpec[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios for RNIContextMenuViewSpec[0m
+[36m[1m[Codegen][0m Processing RNIUtilitiesSpec[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios for RNIUtilitiesSpec[0m
+[36m[1m[Codegen][0m Processing reactnativekeyboardcontroller[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios for reactnativekeyboardcontroller[0m
+[36m[1m[Codegen][0m Processing RNMmkvSpec[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, macos, tvos for RNMmkvSpec[0m
+[36m[1m[Codegen][0m Processing RNGoogleMobileAdsSpec[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios for RNGoogleMobileAdsSpec[0m
+[36m[1m[Codegen][0m Processing pagerview[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, visionos for pagerview[0m
+[36m[1m[Codegen][0m Processing rnreanimated[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, macos, tvos, visionos for rnreanimated[0m
+[36m[1m[Codegen][0m Processing safeareacontext[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, macos, tvos, visionos for safeareacontext[0m
+[36m[1m[Codegen][0m Processing rnscreens[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, tvos, visionos for rnscreens[0m
+[36m[1m[Codegen][0m Processing rnsvg[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, macos, tvos, visionos for rnsvg[0m
+[36m[1m[Codegen][0m Processing rnviewshot[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios for rnviewshot[0m
+[36m[1m[Codegen][0m Processing RNCWebViewSpec[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, macos, visionos for RNCWebViewSpec[0m
+[36m[1m[Codegen][0m Processing rnworklets[0m
+[36m[1m[Codegen][0m [33mSearching for podspec in the project dependencies.[0m
+[36m[1m[Codegen][0m Supported Apple platforms: ios, macos, tvos, visionos for rnworklets[0m
+[36m[1m[Codegen][0m Generating Native Code for rnasyncstorage - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for rnclipboard - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for RNDateTimePickerCGen - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for RNCSlider - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for RNMenuViewSpec - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for rnpicker - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for rnskia - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for lottiereactnative - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Genera
+ting Native Code for rngesturehandler_codegen - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for RNIContextMenuViewSpec - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for RNIUtilitiesSpec - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for reactnativekeyboardcontroller - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for RNMmkvSpec - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for RNGoogleMobileAdsSpec - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for pagerview - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for rnreanimated - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for safeareacontext - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for rnscreens - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for rnsvg - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for rnviewshot - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for RNCWebViewSpec - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating Native Code for rnworklets - ios[0m
+[36m[1m[Codegen][0m Generated artifacts: /Users/expo/workingdir/build/mobile/ios/build/generated/ios[0m
+[36m[1m[Codegen][0m Generating RCTThirdPartyComponentsProvider.h[0m
+[36m[1m[Codegen][0m Generated artifact: /Users/expo/workingdir/build/mobile/ios/build/generated/ios/RCTThirdPartyComponentsProvider.h[0m
+[36m[1m[Codegen][0m Generating RCTThirdPartyComponentsProvider.mm[0m
+[36m[1m[Codegen][0m Generated artifact: /Users/expo/workingdir/build/mobile/ios/build/generated/ios/RCTThirdPartyComponentsProvider.mm[0m
+[36m[1m[Codegen][0m Generating RCTModulesProvider.h[0m
+[36m[1m[Codegen][0m Generated artifact: /Users/expo/workingdir/build/mobile/ios/build/generated/ios/RCTModuleProviders.h[0m
+[36m[1m[Codegen][0m Generating RCTModuleProviders.mm[0m
+[36m[1m[Codegen][0m Generated artifact: /Users/expo/workingdir/build/mobile/ios/build/generated/ios/RCTModuleProviders.mm[0m
+[36m[1m[Codegen][0m Generating RCTAppDependencyProvider[0m
+[36m[1m[Codegen][0m Generated artifact: /Users/expo/workingdir/build/mobile/ios/build/generated/ios/RCTAppDependencyProvider.h[0m
+[36m[1m[Codegen][0m Generated artifact: /Users/expo/workingdir/build/mobile/ios/build/generated/ios/RCTAppDependencyProvider.mm[0m
+[36m[1m[Codegen][0m Generated podspec: /Users/expo/workingdir/build/mobile/ios/build/generated/ios/ReactAppDependencyProvider.podspec[0m
+[36m[1m[Codegen][0m Generated podspec: /Users/expo/workingdir/build/mobile/ios/build/generated/ios/ReactCodegen.podspec[0m
+[36m[1m[Codegen][0m [33mDone.[0m
+Analyzing dependencies
+Fetching podspec for `React-Core-prebuilt` from `../node_modules/react-native/React-Core-prebuilt.podspec`
+[ReactNativeCore] Using tarball from URL: https://repo1.maven.org/maven2/com/facebook/react/react-native-artifacts/0.81.5/react-native-artifacts-0.81.5-reactnative-core-debug.tar.gz
+Fetching podspec for `ReactNativeDependencies` from `../node_modules/react-native/third-party-podspecs/ReactNativeDependencies.podspec`
+[ReactNativeDependencies] Using release tarball
+[ReactNativeDependencies] Using tarball from URL: https://repo1.maven.org/maven2/com/facebook/react/react-native-artifacts/0.81.5/react-native-artifacts-0.81.5-reactnative-dependencies-debug.tar.gz
+Fetching podspec for `hermes-engine` from `../node_modules/react-native/sdks/hermes-engine/hermes-engine.podspec`
+[Hermes] Using release tarball from URL: https://repo1.maven.org/maven2/com/facebook/react/react-native-artifacts/0.81.5/react-native-artifacts-0.81.5-hermes-ios-debug.tar.gz
+% Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+Dload  Upload   Total   Spent    Left  Speed
+
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+100 29.0M  100 29.0M    0     0  93.6M      0 --:--:-- --:--:-- --:--:-- 93.7M
+% Total    % Received % Xferd  Average Speed   Time    Time
+Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+
+  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0
+100 20.3M  100 20.3M    0     0  91.1M      0 --:--:-- --:--:-- --:--:-
+- 91.2M
+[Lottie React Native] Using install_modules_dependencies
+react-native-ios-context-menu
+ - reactNativeTargetVersion: 0.81.5
+ - fabric_enabled: true
+ - linkage: static
+react-native-ios-utilities
+ - reactNativeTargetVersion: 0.81.5
+ - reactNativeTargetVersionOverride: 
+ - fabric_enabled: true
+ - linkage: static
+[react-native-mmkv] Thank you for using react-native-mmkv ❤️
+[react-native-mmkv] If you enjoy using react-native-mmkv, please consider sponsoring this project: https://github.com/sponsors/mrousavy
+SK_GRAPHITE: OFF (Graphite symbols not found in libskia)
+Adding spec repo `trunk` with CDN `https://cdn.cocoapods.org/`
+[!] Unable to find a specification for `RCT-Folly (= 2022.05.16.00)` depended upon by `react-native-ios-context-menu`
+You have either:
+ * out-of-date source repos which you can update with `pod repo update` or with `pod install --repo-update`.
+ * mistyped the name or version.
+ * not added the source repo that hosts the Podspec to your Podfile.
