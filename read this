@@ -1,0 +1,11 @@
+WARN  SafeAreaView has been deprecated and will be removed in a future release. Please use 'react-native-safe-area-context' instead. See https://github.com/th3rdwave/react-native-safe-area-context
+ LOG  Upserting user stats for userId: 4c55f1b6-d5a1-4583-beb9-ab04c3eb01ad
+ LOG  Upserting user stats for userId: 474fce6f-71f2-4472-992d-1d574438ae01
+ LOG  User stats synced
+ LOG  User initialized: 4c55f1b6-d5a1-4583-beb9-ab04c3eb01ad
+ LOG  User stats synced
+ LOG  User initialized: 474fce6f-71f2-4472-992d-1d574438ae01
+ ERROR  [Invariant Violation: TurboModuleRegistry.getEnforcing(...): 'RNGoogleMobileAdsModule' could not be found. Verify that a module by this name is registered in the native binary.]
+ ERROR  [Invariant Violation: TurboModuleRegistry.getEnforcing(...): 'RNGoogleMobileAdsModule' could not be found. Verify that a module by this name is registered in the native binary.]
+ ERROR  [Invariant Violation: TurboModuleRegistry.getEnforcing(...): 'RNGoogleMobileAdsModule' could not be found. Verify that a module by this name is registered in the native binary.]
+ ERROR  [TypeError: Cannot read property 'useInterstitial' of undefined]

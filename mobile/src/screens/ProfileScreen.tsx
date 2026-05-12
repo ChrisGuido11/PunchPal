@@ -7,7 +7,6 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import * as Haptics from "expo-haptics";
 import { useUserStore } from "../state/userStore";
 import { BoxingLevel } from "../types/workout";
-import { ACHIEVEMENTS, getAchievementProgress } from "../utils/achievements";
 import { supabase, isSupabaseEnabled } from "../lib/supabaseClient";
 import { TABLES } from "../lib/tables";
 import { upsertUserStats } from "../api/database-service";
@@ -45,7 +44,6 @@ export default function ProfileScreen() {
   const clearWorkoutHistory = useUserStore((s) => s.clearWorkoutHistory);
   const currentStreak = useUserStore((s) => s.currentStreak);
   const longestStreak = useUserStore((s) => s.longestStreak);
-  const unlockedAchievements = useUserStore((s) => s.unlockedAchievements);
 
   const [isEditingLevel, setIsEditingLevel] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -407,73 +405,10 @@ export default function ProfileScreen() {
             </View>
             <View className="flex-1 bg-boxing-cardBg border-2 border-boxing-red rounded-2xl p-4">
               <Text className="text-3xl font-black text-boxing-red mb-1">
-                {Math.floor(totalDuration / 60)}
+                {totalDuration}
               </Text>
               <Text className="text-sm text-boxing-gold uppercase tracking-wider">Minutes</Text>
             </View>
-          </View>
-        </View>
-
-        {/* Achievements Section */}
-        <View className="px-6 mb-6">
-          <Text className="text-xl font-bold text-white mb-4">
-            Achievements
-          </Text>
-          <View className="space-y-3">
-            {ACHIEVEMENTS.slice(0, 6).map((achievement) => {
-              const isUnlocked = unlockedAchievements.includes(achievement.id);
-              const progress = getAchievementProgress(achievement.id, workoutHistory, currentStreak);
-              const progressPercent = Math.min((progress.current / progress.target) * 100, 100);
-
-              return (
-                <View
-                  key={achievement.id}
-                  className={`rounded-2xl p-4 border-2 ${
-                    isUnlocked
-                      ? "bg-boxing-red/10 border-boxing-red"
-                      : "bg-boxing-cardBg border-boxing-cardBorder"
-                  }`}
-                >
-                  <View className="flex-row items-center mb-2">
-                    {/* Achievement icon badge */}
-                    <View className={`w-10 h-10 rounded-full mr-3 items-center justify-center border-2 ${
-                      isUnlocked ? "border-boxing-red bg-boxing-red/20" : "border-gray-600 bg-gray-800"
-                    }`}>
-                      <Text className={`text-xs font-black ${isUnlocked ? "text-boxing-red" : "text-gray-600"}`}>{achievement.icon}</Text>
-                    </View>
-                    <View className="flex-1">
-                      <Text className={`text-lg font-bold ${isUnlocked ? "text-white" : "text-gray-500"}`}>
-                        {achievement.title}
-                      </Text>
-                      <Text className={`text-sm ${isUnlocked ? "text-gray-300" : "text-gray-600"}`}>
-                        {achievement.description}
-                      </Text>
-                    </View>
-                    {isUnlocked && (
-                      <Text className="text-2xl text-boxing-red font-black">✓</Text>
-                    )}
-                    {achievement.isPremium && !isUnlocked && (
-                      <View className="bg-boxing-gold/20 px-2 py-1 rounded">
-                        <Text className="text-xs text-boxing-gold font-bold">PRO</Text>
-                      </View>
-                    )}
-                  </View>
-                  {!isUnlocked && (
-                    <View className="mt-2">
-                      <View className="h-2 bg-black/30 rounded-full overflow-hidden">
-                        <View 
-                          className="h-full bg-boxing-red rounded-full"
-                          style={{ width: `${progressPercent}%` }}
-                        />
-                      </View>
-                      <Text className="text-xs text-boxing-gold mt-1">
-                        {progress.current} / {progress.target}
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              );
-            })}
           </View>
         </View>
 
@@ -506,27 +441,25 @@ export default function ProfileScreen() {
             </View>
           ) : (
             <View className="space-y-3">
-              {workoutHistory.slice(0, 10).map((workout, index) => (
+              {workoutHistory.slice(0, 10).map((workout) => (
                 <View
                   key={workout.id}
                   className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-xl p-4"
                 >
-                  <View className="flex-row items-center justify-between mb-2">
-                    <Text className="text-lg font-bold text-white">
-                      Workout #{workoutHistory.length - index}
-                    </Text>
-                    <View className="bg-boxing-gold/20 px-3 py-1 rounded-full">
+                  <Text className="text-lg font-bold text-white mb-3">
+                    {workout.workoutName || "Workout"}
+                  </Text>
+                  <View className="flex-row items-center flex-wrap">
+                    <View className="bg-boxing-gold/20 px-3 py-1 rounded-full mr-3 mb-1">
                       <Text className="text-xs font-semibold text-boxing-gold">
                         {workout.rounds} rounds
                       </Text>
                     </View>
-                  </View>
-                  <View className="flex-row items-center space-x-4">
-                    <Text className="text-sm text-gray-400">
-                      {Math.floor(workout.duration / 60)} min
+                    <Text className="text-sm text-gray-400 mr-2 mb-1">
+                      {workout.duration} min
                     </Text>
-                    <Text className="text-gray-600">•</Text>
-                    <Text className="text-sm text-gray-400">
+                    <Text className="text-gray-600 mr-2 mb-1">•</Text>
+                    <Text className="text-sm text-gray-400 mb-1">
                       {new Date(workout.completedAt).toLocaleDateString()}
                     </Text>
                   </View>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, ScrollView, Pressable, Image } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -9,9 +10,13 @@ import { generateWorkout } from "../api/workout-generator";
 import WorkoutCard from "../components/WorkoutCard";
 import StreakCard from "../components/StreakCard";
 import PulsingEnergyLoader from "../components/PulsingEnergyLoader";
+import BannerAdView from "../components/BannerAdView";
 import { upsertUserStats } from "../api/database-service";
 import { ensureDailyReminder } from "../utils/notifications";
 import { BoxingLevel } from "../types/workout";
+import { INTERSTITIAL_AD_UNIT_ID, useInterstitial } from "../lib/ads";
+
+const BANNER_RESERVED_HEIGHT = 60;
 
 type RootStackParamList = {
   Timer: undefined;
@@ -22,6 +27,7 @@ type Props = NativeStackScreenProps<RootStackParamList>;
 
 export default function HomeScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
   const userId = useUserStore((s) => s.userId);
   const boxingLevel = useUserStore((s) => s.boxingLevel);
   const workoutHistory = useUserStore((s) => s.workoutHistory);
@@ -34,6 +40,7 @@ export default function HomeScreen({ navigation }: Props) {
 
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const freshWorkoutAd = useInterstitial(INTERSTITIAL_AD_UNIT_ID);
 
   useEffect(() => {
     updateStreaks();
@@ -96,11 +103,13 @@ export default function HomeScreen({ navigation }: Props) {
     navigation.navigate("Timer");
   };
 
-  const handleRegenerate = async () => {
+  const handleRegenerate = () => {
     if (!boxingLevel || isGenerating) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCurrentWorkout(null);
-    await loadWorkout();
+    freshWorkoutAd.show(() => {
+      loadWorkout();
+    });
   };
 
   return (
@@ -115,7 +124,7 @@ export default function HomeScreen({ navigation }: Props) {
         contentContainerStyle={{
           flexGrow: 1,
           paddingTop: insets.top + 12,
-          paddingBottom: insets.bottom + 16,
+          paddingBottom: BANNER_RESERVED_HEIGHT + 16,
         }}
       >
         <View className="px-6 mb-4">
@@ -183,6 +192,18 @@ export default function HomeScreen({ navigation }: Props) {
           </>
         ) : null}
       </ScrollView>
+
+      <View
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: tabBarHeight,
+        }}
+        pointerEvents="box-none"
+      >
+        <BannerAdView />
+      </View>
     </LinearGradient>
   );
 }

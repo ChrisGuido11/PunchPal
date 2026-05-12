@@ -41,7 +41,6 @@ export interface Achievement {
   description: string;
   icon: string;
   unlockedAt?: Date;
-  isPremium?: boolean;
 }
 
 export interface UserStats {

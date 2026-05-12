@@ -2,98 +2,83 @@ import { Achievement } from "../types/workout";
 import { WorkoutHistory } from "../types/workout";
 
 export const ACHIEVEMENTS: Achievement[] = [
-  // Free achievements
   {
     id: "first_workout",
     title: "First Steps",
     description: "Complete your first workout",
     icon: "1",
-    isPremium: false,
   },
   {
     id: "streak_3",
     title: "Getting Started",
     description: "3-day workout streak",
     icon: "3",
-    isPremium: false,
   },
   {
     id: "streak_7",
     title: "Week Warrior",
     description: "7-day workout streak",
     icon: "7",
-    isPremium: false,
   },
   {
     id: "workouts_10",
     title: "Committed Fighter",
     description: "Complete 10 workouts",
     icon: "10",
-    isPremium: false,
   },
   {
     id: "workouts_25",
     title: "Dedicated Boxer",
     description: "Complete 25 workouts",
     icon: "25",
-    isPremium: false,
   },
-  // Premium achievements
   {
     id: "streak_14",
     title: "Two Week Champion",
     description: "14-day workout streak",
     icon: "14",
-    isPremium: true,
   },
   {
     id: "streak_30",
     title: "Monthly Master",
     description: "30-day workout streak",
     icon: "30",
-    isPremium: true,
   },
   {
     id: "workouts_50",
     title: "Boxing Elite",
     description: "Complete 50 workouts",
     icon: "50",
-    isPremium: true,
   },
   {
     id: "workouts_100",
     title: "Century Club",
     description: "Complete 100 workouts",
     icon: "100",
-    isPremium: true,
   },
   {
     id: "rounds_100",
     title: "Round Master",
     description: "Complete 100 rounds total",
     icon: "R100",
-    isPremium: true,
   },
   {
     id: "rounds_500",
     title: "Ring Legend",
     description: "Complete 500 rounds total",
     icon: "R500",
-    isPremium: true,
   },
   {
     id: "level_up_inter",
     title: "Leveling Up",
     description: "Advance to Intermediate level",
     icon: "I",
-    isPremium: false,
   },
   {
     id: "level_up_advanced",
     title: "Elite Fighter",
     description: "Advance to Advanced level",
     icon: "A",
-    isPremium: true,
   },
 ];
 

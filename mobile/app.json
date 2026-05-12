@@ -1,9 +1,9 @@
 {
   "expo": {
     "name": "PunchPal",
-    "slug": "punchpal",
+    "slug": "punchpal-ai-coach",
     "scheme": "punchpal",
-    "version": "1.0.0",
+    "version": "1.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
@@ -16,11 +16,13 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.punchpal.app",
+      "buildNumber": "2",
       "infoPlist": {
         "NSSpeechRecognitionUsageDescription": "PunchPal uses speech to call out combos during workouts",
         "UIBackgroundModes": [
           "audio"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -29,13 +31,20 @@
     },
     "extra": {
       "eas": {
-        "projectId": ""
+        "projectId": "61f19f38-1c99-48db-b8a7-d53d0238a8a5"
       },
       "grokApiKey": "$EXPO_PUBLIC_VIBECODE_GROK_API_KEY"
     },
     "plugins": [
       "@react-native-community/datetimepicker",
-      ["expo-asset", { "assets": ["./assets"] }],
+      [
+        "expo-asset",
+        {
+          "assets": [
+            "./assets"
+          ]
+        }
+      ],
       "expo-build-properties",
       "expo-font",
       "expo-image",
@@ -44,7 +53,15 @@
       "expo-sharing",
       "expo-sqlite",
       "expo-video",
-      "expo-web-browser"
-    ]
+      "expo-web-browser",
+      [
+        "react-native-google-mobile-ads",
+        {
+          "androidAppId": "ca-app-pub-8632074296834726~6685988576",
+          "iosAppId": "ca-app-pub-8632074296834726~5383909951"
+        }
+      ]
+    ],
+    "owner": "crisguido"
   }
 }

@@ -10,6 +10,7 @@ import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useUserStore } from "../state/userStore";
 import { checkAchievements } from "../utils/achievements";
 import { logWorkoutSession } from "../api/database-service";
+import { INTERSTITIAL_AD_UNIT_ID, useInterstitial } from "../lib/ads";
 
 type RootStackParamList = {
   Splash: undefined;
@@ -56,6 +57,58 @@ function TimerScreen({ navigation }: Props) {
   const lastRestBeepSecondRef = useRef<number | null>(null);
   const restSpokenRef = useRef<number | null>(null);
   const beepSoundRef = useRef<Audio.Sound | null>(null);
+  const isEarlyExitRef = useRef(false);
+  const [coachVoiceId, setCoachVoiceId] = useState<string | undefined>(undefined);
+
+  const postWorkoutAd = useInterstitial(INTERSTITIAL_AD_UNIT_ID);
+
+  useEffect(() => {
+    let cancelled = false;
+    Speech.getAvailableVoicesAsync()
+      .then((voices) => {
+        if (cancelled) return;
+        const enUs = voices.filter((v) => v.language.startsWith("en"));
+        const nonDefault = enUs.filter((v) => v.quality !== Speech.VoiceQuality.Default);
+
+        // Priority 1: generic Siri male voice (iOS "Voice 1") — identifier
+        // looks like com.apple.ttsbundle.siri_male_en-US_premium. Highest
+        // quality coach voice on a stock iPhone.
+        const pickSiriMale = (pool: Speech.Voice[]) =>
+          pool.find((v) => {
+            const id = v.identifier.toLowerCase();
+            return id.includes("siri") && id.includes("_male_");
+          })?.identifier;
+
+        // Priority 2: named premium/enhanced male voices in fallback order.
+        // Nathan is the next-best male voice when Siri Voice 1 isn't installed.
+        const preferOrder = ["Nathan", "Aaron", "Evan", "Tom", "Reed", "Fred", "Daniel"];
+        const pickByName = (pool: Speech.Voice[]) => {
+          for (const name of preferOrder) {
+            const match = pool.find(
+              (v) =>
+                v.name.toLowerCase().includes(name.toLowerCase()) ||
+                v.identifier.toLowerCase().includes(name.toLowerCase())
+            );
+            if (match) return match.identifier;
+          }
+          return undefined;
+        };
+
+        const picked =
+          pickSiriMale(nonDefault) ??
+          pickByName(nonDefault) ??
+          nonDefault[0]?.identifier ??
+          pickSiriMale(enUs) ??
+          pickByName(enUs);
+        setCoachVoiceId(picked);
+      })
+      .catch(() => {
+        // Falls back to platform default voice — same as before.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const totalRounds = currentWorkout?.rounds ?? 1;
   const combos = currentWorkout?.combos ?? [];
@@ -74,13 +127,17 @@ function TimerScreen({ navigation }: Props) {
       })
       .join(", ");
 
-  const speak = useCallback((text: string) => {
-    Speech.speak(text, {
-      language: "en-US",
-      rate: 1,
-      pitch: 1,
-    });
-  }, []);
+  const speak = useCallback(
+    (text: string) => {
+      Speech.speak(text, {
+        language: "en-US",
+        voice: coachVoiceId,
+        rate: 0.95,
+        pitch: 1,
+      });
+    },
+    [coachVoiceId]
+  );
 
   const clearComboCallouts = useCallback(() => {
     comboCalloutTimeoutsRef.current.forEach((t) => clearTimeout(t));
@@ -182,10 +239,20 @@ function TimerScreen({ navigation }: Props) {
 
     speak("Amazing work. Workout complete. How did that feel?");
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    isEarlyExitRef.current = false;
     setFinishedAt(completedAt);
     setShowRating(true);
     setIsRunning(false);
   }, [addWorkoutToHistory, currentWorkout, currentStreak, longestStreak, speak, unlockAchievement, unlockedAchievements, workoutHistory]);
+
+  const exitToHome = useCallback(() => {
+    const shouldShowAd = !isEarlyExitRef.current;
+    if (shouldShowAd) {
+      postWorkoutAd.show(() => navigation.goBack());
+    } else {
+      navigation.goBack();
+    }
+  }, [navigation, postWorkoutAd]);
 
   const submitRating = useCallback(
     async (rating: 1 | 2 | 3) => {
@@ -210,9 +277,9 @@ function TimerScreen({ navigation }: Props) {
         });
       }
       setShowRating(false);
-      navigation.goBack();
+      exitToHome();
     },
-    [currentWorkout, finishedAt, navigation, userId]
+    [currentWorkout, exitToHome, finishedAt, userId]
   );
 
   const skipRating = useCallback(() => {
@@ -233,8 +300,8 @@ function TimerScreen({ navigation }: Props) {
       }).catch(() => {});
     }
     setShowRating(false);
-    navigation.goBack();
-  }, [currentWorkout, finishedAt, navigation, userId]);
+    exitToHome();
+  }, [currentWorkout, exitToHome, finishedAt, userId]);
 
   const startRest = useCallback(() => {
     setPhase("rest");
@@ -386,6 +453,7 @@ function TimerScreen({ navigation }: Props) {
     clearComboCallouts();
     setIsRunning(false);
     setIsPaused(false);
+    isEarlyExitRef.current = true;
     setFinishedAt(new Date());
     setShowRating(true);
   };

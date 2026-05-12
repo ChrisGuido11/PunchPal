@@ -2,7 +2,7 @@
 
 _Last Updated: 2026-05-11_
 
-PunchPal is an AI-powered boxing coach for iOS that generates personalized workouts using Claude Sonnet 4.6, tracks user progression across 9 tiers (raw beginner → pro), and delivers verbal cues during timed rounds.
+PunchPal is an AI-powered boxing coach for iOS that   i dont have aaron on my generates personalized workouts using Claude Sonnet 4.6, tracks user progression across 9 tiers (raw beginner → pro), and delivers verbal cues during timed rounds.
 
 ---
 
