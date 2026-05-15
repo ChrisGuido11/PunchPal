@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, Image } from "react-native";
+import { View, Text, Pressable, ScrollView, TextInput, ActivityIndicator, Alert, Image, KeyboardAvoidingView, Platform } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -41,24 +41,41 @@ export default function AuthScreen({ navigation }: Props) {
     setError(null);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
+    const withTimeout = <T,>(p: Promise<T>, ms = 20000): Promise<T> =>
+      Promise.race([
+        p,
+        new Promise<T>((_, reject) =>
+          setTimeout(
+            () => reject(new Error("Request timed out. Check your connection and try again.")),
+            ms,
+          ),
+        ),
+      ]);
+
     try {
       let result;
+      // updateUser keeps the existing anon session (in-place upgrade) and returns
+      // { data: { user } } without a session field — that's still success, not a
+      // pending email confirmation. Track which path we took so we can interpret
+      // the response correctly.
+      let isAnonUpgrade = false;
 
       if (mode === "signup") {
-        // If the user is currently anonymous, upgrade their existing session
-        // via updateUser() — this preserves their UID and all guest progress.
-        // Falls back to signUp() only when no anon session exists.
-        const { data: currentUserData } = await supabase.auth.getUser();
-        if (currentUserData.user?.is_anonymous) {
-          result = await supabase.auth.updateUser({ email, password });
+        // Use getSession() (reads cached JWT, no network) instead of getUser()
+        // (server roundtrip — hangs forever if queued behind a stalled
+        // signInAnonymously() call from another code path).
+        const { data: sessionData } = await supabase.auth.getSession();
+        const currentUser = sessionData.session?.user;
+        if (currentUser?.is_anonymous) {
+          isAnonUpgrade = true;
+          result = await withTimeout(supabase.auth.updateUser({ email, password }));
         } else {
-          result = await supabase.auth.signUp({ email, password });
+          result = await withTimeout(supabase.auth.signUp({ email, password }));
         }
       } else {
-        result = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+        result = await withTimeout(
+          supabase.auth.signInWithPassword({ email, password }),
+        );
       }
 
       if (result.error) {
@@ -67,13 +84,30 @@ export default function AuthScreen({ navigation }: Props) {
         return;
       }
 
-      if (result.data.user) {
+      // Success criteria differs by path:
+      // - updateUser (anon upgrade): existing session is still valid; data.session
+      //   is not returned. Just having data.user means the upgrade succeeded.
+      // - signUp / signInWithPassword: need BOTH user and session. If user is
+      //   present but session is null, email confirmation is enabled and pending.
+      const isSuccess = isAnonUpgrade
+        ? !!result.data.user
+        : !!(result.data.user && result.data.session);
+
+      if (isSuccess && result.data.user) {
         useUserStore.setState({ userId: result.data.user.id });
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         navigation.goBack();
+      } else if (result.data.user) {
+        // Email confirmation required — user exists but no active session yet.
+        setError("Check your email to confirm your account, then sign in.");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      } else {
+        setError("Something went wrong. Please try again.");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       }
     } catch (err) {
-      setError("An error occurred. Please try again.");
+      const message = err instanceof Error ? err.message : "An error occurred. Please try again.";
+      setError(message);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsLoading(false);
@@ -88,12 +122,20 @@ export default function AuthScreen({ navigation }: Props) {
 
   return (
     <LinearGradient colors={["#000000", "#000000"]} style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
+      >
       <ScrollView
         className="flex-1"
         contentContainerStyle={{
           paddingTop: insets.top + 20,
           paddingBottom: insets.bottom + 40,
+          flexGrow: 1,
         }}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="on-drag"
       >
         <View className="px-6">
           {/* Logo */}
@@ -242,6 +284,7 @@ export default function AuthScreen({ navigation }: Props) {
           )}
         </View>
       </ScrollView>
+      </KeyboardAvoidingView>
     </LinearGradient>
   );
 }

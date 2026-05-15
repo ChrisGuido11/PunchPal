@@ -2,6 +2,17 @@ import { supabase, isSupabaseEnabled } from "../lib/supabaseClient";
 import { TABLES } from "../lib/tables";
 import { BoxingLevel } from "../types/workout";
 
+async function ensureAuthUserId(): Promise<string | null> {
+  const { data: existing } = await supabase.auth.getSession();
+  if (existing.session?.user) return existing.session.user.id;
+  const { data, error } = await supabase.auth.signInAnonymously();
+  if (error) {
+    console.error("ensureAuthUserId: anonymous sign-in failed:", error);
+    return null;
+  }
+  return data.session?.user.id ?? null;
+}
+
 export interface WorkoutSession {
   id: string;
   userId: string;
@@ -85,9 +96,13 @@ export async function upsertUserStats(
   }
 
   try {
-    console.log('Upserting user stats for userId:', userId);
+    const authUserId = await ensureAuthUserId();
+    if (!authUserId) {
+      console.error("upsertUserStats: no auth session available");
+      return null;
+    }
     const dbRecord = {
-      user_id: userId,
+      user_id: authUserId,
       total_workouts: stats.totalWorkouts,
       total_minutes: stats.totalMinutes,
       current_level: stats.currentLevel,
@@ -135,8 +150,13 @@ export async function logWorkoutSession(
   if (!isSupabaseEnabled()) return null;
 
   try {
+    const authUserId = await ensureAuthUserId();
+    if (!authUserId) {
+      console.error("logWorkoutSession: no auth session available");
+      return null;
+    }
     const dbRecord = {
-      user_id: session.userId,
+      user_id: authUserId,
       workout_name: session.workoutName,
       difficulty: session.difficulty,
       duration: session.duration,

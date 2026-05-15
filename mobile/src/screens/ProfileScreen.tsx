@@ -8,7 +8,6 @@ import * as Haptics from "expo-haptics";
 import { useUserStore } from "../state/userStore";
 import { BoxingLevel } from "../types/workout";
 import { supabase, isSupabaseEnabled } from "../lib/supabaseClient";
-import { TABLES } from "../lib/tables";
 import { upsertUserStats } from "../api/database-service";
 
 type RootStackParamList = {
@@ -48,19 +47,32 @@ export default function ProfileScreen() {
   const [isEditingLevel, setIsEditingLevel] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isAnonymous, setIsAnonymous] = useState<boolean>(true);
-  const [showRatingPreview, setShowRatingPreview] = useState(false);
 
   useEffect(() => {
     if (!isSupabaseEnabled()) return;
     let active = true;
-    const refresh = async () => {
-      const { data } = await supabase.auth.getUser();
+
+    const applySession = (user: { email?: string | null; is_anonymous?: boolean } | null | undefined) => {
       if (!active) return;
-      setUserEmail(data.user?.email ?? null);
-      setIsAnonymous(data.user?.is_anonymous ?? !data.user?.email);
+      setUserEmail(user?.email ?? null);
+      setIsAnonymous(user?.is_anonymous ?? !user?.email);
     };
-    refresh();
-    const { data: sub } = supabase.auth.onAuthStateChange(() => refresh());
+
+    // Initial load via getSession() (cached, no server roundtrip).
+    (async () => {
+      const { data } = await supabase.auth.getSession();
+      applySession(data.session?.user);
+    })();
+
+    // CRITICAL: do NOT call any supabase.auth.* methods inside this callback.
+    // supabase-js awaits subscriber callbacks while still holding its internal
+    // auth lock; calling getUser/getSession/updateUser/signOut from in here
+    // causes a circular await that deadlocks signUp/updateUser/signInWithPassword
+    // until our 20s withTimeout fires. Use the `session` arg directly instead.
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      applySession(session?.user);
+    });
+
     return () => {
       active = false;
       sub.subscription.unsubscribe();
@@ -111,6 +123,7 @@ export default function ProfileScreen() {
   };
 
   const handleSignOut = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert(
       "Sign Out",
       "Are you sure you want to sign out?",
@@ -124,20 +137,28 @@ export default function ProfileScreen() {
           style: "destructive",
           onPress: async () => {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            
-            if (isSupabaseEnabled()) {
-              await supabase.auth.signOut();
+
+            try {
+              if (isSupabaseEnabled()) {
+                // signOut() goes through the supabase-js auth lock — wrap in a
+                // timeout so a hung lock doesn't block local cleanup forever.
+                await Promise.race([
+                  supabase.auth.signOut(),
+                  new Promise((resolve) => setTimeout(resolve, 5000)),
+                ]);
+              }
+            } catch (err) {
+              console.error("signOut failed:", err);
             }
-            
-            // Clear user store
-            useUserStore.setState({ 
+
+            useUserStore.setState({
               userId: null,
               hasCompletedOnboarding: false,
               workoutHistory: [],
               currentStreak: 0,
               longestStreak: 0,
             });
-            
+
             navigation.reset({
               index: 0,
               routes: [{ name: "Splash" }],
@@ -154,6 +175,7 @@ export default function ProfileScreen() {
   };
 
   const handleDeleteAccount = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert(
       "Delete Account",
       "Are you sure you want to delete your account? This action cannot be undone and all your data will be permanently deleted.",
@@ -168,22 +190,56 @@ export default function ProfileScreen() {
           onPress: async () => {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
 
-            if (isSupabaseEnabled()) {
-              const { data: { user } } = await supabase.auth.getUser();
-              if (user) {
-                // Delete user data from database
-                await supabase.from(TABLES.userStats).delete().eq('user_id', user.id);
-                await supabase.from(TABLES.workoutSessions).delete().eq('user_id', user.id);
-                await supabase.from(TABLES.comboProgress).delete().eq('user_id', user.id);
+            const withTimeout = <T,>(p: Promise<T>, ms = 10000): Promise<T | null> =>
+              Promise.race([
+                p.catch((e) => {
+                  console.error("delete-account call failed:", e);
+                  return null as T | null;
+                }),
+                new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+              ]);
 
-                // Delete auth account (requires admin privileges in production)
-                // In production, you'd call a server function to handle this
+            let serverFailureMessage: string | null = null;
+
+            try {
+              if (isSupabaseEnabled()) {
+                // Edge Function uses service-role key to delete data tables
+                // AND the auth.users row. Client cannot do either directly:
+                // RLS has no DELETE policy on the data tables, and only the
+                // service role can call auth.admin.deleteUser().
+                const result = await withTimeout(
+                  supabase.functions.invoke<{
+                    data_deleted: boolean;
+                    auth_deleted: boolean;
+                    auth_error?: string;
+                    table_errors?: Record<string, string>;
+                  }>("punchpal-delete-account"),
+                );
+
+                if (!result) {
+                  serverFailureMessage =
+                    "We couldn't reach the server to fully delete your account. You've been signed out locally — contact support if this persists.";
+                } else if (result.error) {
+                  console.error("delete-account invoke error:", result.error);
+                  serverFailureMessage =
+                    "Account deletion failed on the server. You've been signed out locally — contact support if this persists.";
+                } else if (result.data && !result.data.data_deleted) {
+                  console.error("delete-account partial failure:", result.data);
+                  serverFailureMessage =
+                    "We couldn't fully delete your account on the server. Contact support if this persists.";
+                }
+
+                // signOut clears the local AsyncStorage JWT. The auth row may
+                // already be gone server-side, which is fine — signOut tolerates
+                // a missing session and just clears local state.
+                await withTimeout(supabase.auth.signOut());
               }
-
-              await supabase.auth.signOut();
+            } catch (err) {
+              console.error("delete-account flow failed:", err);
+              serverFailureMessage =
+                "Account deletion failed on the server. You've been signed out locally — contact support if this persists.";
             }
 
-            // Clear all user data
             useUserStore.setState({
               userId: null,
               hasCompletedOnboarding: false,
@@ -198,6 +254,10 @@ export default function ProfileScreen() {
               unlockedAchievements: [],
             });
 
+            if (serverFailureMessage) {
+              Alert.alert("Account Deletion", serverFailureMessage);
+            }
+
             navigation.reset({
               index: 0,
               routes: [{ name: "Splash" }],
@@ -211,7 +271,7 @@ export default function ProfileScreen() {
   const handleOpenPrivacyPolicy = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      await Linking.openURL("https://punchpal-privacy-policy.lovable.app/");
+      await Linking.openURL("https://punchpal-ai.lovable.app/privacy");
     } catch (error) {
       console.error("Failed to open privacy policy:", error);
     }
@@ -220,9 +280,18 @@ export default function ProfileScreen() {
   const handleOpenSupport = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      await Linking.openURL("https://punchpalsupport.lovable.app/");
+      await Linking.openURL("https://punchpal-ai.lovable.app/support");
     } catch (error) {
       console.error("Failed to open support website:", error);
+    }
+  };
+
+  const handleOpenTerms = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      await Linking.openURL("https://punchpal-ai.lovable.app/terms");
+    } catch (error) {
+      console.error("Failed to open terms website:", error);
     }
   };
 
@@ -532,21 +601,6 @@ export default function ProfileScreen() {
             Deleting your account will permanently remove all your data
           </Text>
 
-          {/* DEV — temporary button to preview the post-workout rating modal */}
-          <Pressable
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowRatingPreview(true);
-            }}
-            className="active:opacity-80 mb-3"
-          >
-            <View className="bg-[#1A1A1A] border border-gray-700 rounded-xl py-3 px-6">
-              <Text className="text-gray-400 text-center text-xs font-bold uppercase tracking-widest">
-                DEV: Preview Rating Modal
-              </Text>
-            </View>
-          </Pressable>
-
           {/* Privacy Policy Button */}
           <Pressable
             onPress={handleOpenPrivacyPolicy}
@@ -555,6 +609,18 @@ export default function ProfileScreen() {
             <View className="bg-black border border-gray-600 rounded-xl py-3 px-6">
               <Text className="text-gray-400 text-center text-sm font-semibold">
                 Privacy Policy
+              </Text>
+            </View>
+          </Pressable>
+
+          {/* Terms Button */}
+          <Pressable
+            onPress={handleOpenTerms}
+            className="active:opacity-80 mb-3"
+          >
+            <View className="bg-black border border-gray-600 rounded-xl py-3 px-6">
+              <Text className="text-gray-400 text-center text-sm font-semibold">
+                Terms of Service
               </Text>
             </View>
           </Pressable>
@@ -572,83 +638,6 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
       </ScrollView>
-
-      {showRatingPreview && (
-        <View
-          className="absolute inset-0 bg-black/90 items-center justify-center px-6"
-          style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
-        >
-          <View className="bg-[#1A1A1A] rounded-3xl w-full" style={{ maxWidth: 400 }}>
-            <View className="px-6 py-5 border-b border-gray-800">
-              <Text className="text-white text-xl font-bold text-center">
-                Workout Complete
-              </Text>
-              <Text className="text-gray-400 text-sm text-center mt-1">
-                How was that?
-              </Text>
-              <Text className="text-boxing-gold text-[10px] text-center mt-2 uppercase tracking-widest">
-                DEV PREVIEW
-              </Text>
-            </View>
-            <View className="p-6 space-y-3">
-              <Pressable
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  setShowRatingPreview(false);
-                }}
-                className="active:opacity-90"
-              >
-                <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-gold">
-                  <Text className="text-white text-center text-base font-bold">
-                    Too Easy
-                  </Text>
-                  <Text className="text-gray-400 text-center text-xs mt-1">
-                    Push me harder next time
-                  </Text>
-                </View>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  setShowRatingPreview(false);
-                }}
-                className="active:opacity-90"
-              >
-                <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-red">
-                  <Text className="text-white text-center text-base font-bold">
-                    Just Right
-                  </Text>
-                  <Text className="text-gray-400 text-center text-xs mt-1">
-                    Challenging but doable
-                  </Text>
-                </View>
-              </Pressable>
-              <Pressable
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  setShowRatingPreview(false);
-                }}
-                className="active:opacity-90"
-              >
-                <View className="bg-black rounded-xl py-4 px-6 border-2 border-gray-600">
-                  <Text className="text-white text-center text-base font-bold">
-                    Too Hard
-                  </Text>
-                  <Text className="text-gray-400 text-center text-xs mt-1">
-                    Drop the complexity
-                  </Text>
-                </View>
-              </Pressable>
-              <Pressable
-                onPress={() => setShowRatingPreview(false)}
-                className="active:opacity-80 pt-2"
-              >
-                <Text className="text-gray-500 text-center text-sm">Skip</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      )}
     </LinearGradient>
   );
 }

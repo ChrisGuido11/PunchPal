@@ -11,6 +11,7 @@ import { useUserStore } from "../state/userStore";
 import { checkAchievements } from "../utils/achievements";
 import { logWorkoutSession } from "../api/database-service";
 import { INTERSTITIAL_AD_UNIT_ID, useInterstitial } from "../lib/ads";
+import BannerAdView from "../components/BannerAdView";
 
 type RootStackParamList = {
   Splash: undefined;
@@ -235,7 +236,8 @@ function TimerScreen({ navigation }: Props) {
       newAchievements.forEach((id) => unlockAchievement(id));
     }, 100);
 
-    speak("Amazing work. Workout complete. How did that feel?");
+    speak("Workout complete. Every round, you're getting sharper.");
+    speak("Rate how it felt — it helps me dial in the next workout for you.");
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     isEarlyExitRef.current = false;
     setFinishedAt(completedAt);
@@ -275,9 +277,9 @@ function TimerScreen({ navigation }: Props) {
         });
       }
       setShowRating(false);
-      exitToHome();
+      postWorkoutAd.show(() => navigation.goBack());
     },
-    [currentWorkout, exitToHome, finishedAt, userId]
+    [currentWorkout, finishedAt, navigation, postWorkoutAd, userId]
   );
 
   const skipRating = useCallback(() => {
@@ -298,8 +300,8 @@ function TimerScreen({ navigation }: Props) {
       }).catch(() => {});
     }
     setShowRating(false);
-    exitToHome();
-  }, [currentWorkout, exitToHome, finishedAt, userId]);
+    postWorkoutAd.show(() => navigation.goBack());
+  }, [currentWorkout, finishedAt, navigation, postWorkoutAd, userId]);
 
   const startRest = useCallback(() => {
     setPhase("rest");
@@ -348,10 +350,12 @@ function TimerScreen({ navigation }: Props) {
 
   useEffect(() => {
     if (!isRunning || isPaused) {
-      Speech.stop();
+      if (!showRating) {
+        Speech.stop();
+      }
       clearComboCallouts();
     }
-  }, [clearComboCallouts, isPaused, isRunning]);
+  }, [clearComboCallouts, isPaused, isRunning, showRating]);
 
   useEffect(() => {
     if (!isRunning || isPaused || phase !== "work") {
@@ -452,6 +456,8 @@ function TimerScreen({ navigation }: Props) {
     isEarlyExitRef.current = true;
     setFinishedAt(new Date());
     setShowRating(true);
+    speak("Workout ended. Showing up is half the fight — every rep is in the bank.");
+    speak("Rate how it felt — it helps me dial in the next workout for you.");
   };
 
   const watchLesson = async () => {
@@ -493,7 +499,7 @@ function TimerScreen({ navigation }: Props) {
         contentContainerStyle={{
           flexGrow: 1,
           paddingTop: insets.top,
-          paddingBottom: insets.bottom + 16,
+          paddingBottom: 16,
         }}
         showsVerticalScrollIndicator={false}
       >
@@ -584,6 +590,10 @@ function TimerScreen({ navigation }: Props) {
           </Pressable>
         </View>
       </ScrollView>
+
+      <View style={{ paddingBottom: insets.bottom }}>
+        <BannerAdView />
+      </View>
 
         {/* Post-Workout Rating Modal */}
         {showRating && (

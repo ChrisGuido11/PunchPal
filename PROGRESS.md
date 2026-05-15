@@ -1,6 +1,6 @@
 # PunchPal — Progress
 
-_Last Updated: 2026-05-11 (PM session — AdMob, voice upgrade, Profile cleanup, EAS setup)_
+_Last Updated: 2026-05-15 (auth deadlock fix + account-deletion edge function + signup success branching + keyboard UX)_
 
 PunchPal is an AI-powered boxing coach for iOS that generates personalized workouts using Claude Sonnet 4.6, tracks user progression across 9 tiers (raw beginner → pro), and delivers verbal cues during timed rounds.
 
@@ -120,7 +120,7 @@ _Schema-level support exists; not yet wired from the mobile app post-workout._
 
 ## Edge Functions
 
-Only one deployed: **`punchpal-generate-workout`**.
+Two deployed: **`punchpal-generate-workout`** and **`punchpal-delete-account`**.
 
 ### Endpoint
 `POST https://zeskhorwddxyjhhnpgsa.supabase.co/functions/v1/punchpal-generate-workout`
@@ -161,6 +161,13 @@ Only one deployed: **`punchpal-generate-workout`**.
 ### Secrets (set on project)
 - `ANTHROPIC_API_KEY` — real `sk-ant-…` key
 - Standard auto-injected: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_DB_URL`
+
+### `punchpal-delete-account` (deployed 2026-05-15)
+`POST https://zeskhorwddxyjhhnpgsa.supabase.co/functions/v1/punchpal-delete-account`
+- JWT verification ON. Caller's bearer token validates which user to delete.
+- Validates JWT via `getUser()`, then uses `SUPABASE_SERVICE_ROLE_KEY` to delete in order: `punchpal_combo_progress`, `punchpal_workout_sessions`, `punchpal_user_stats`, then `auth.admin.deleteUser`.
+- Response: `{ data_deleted: bool, auth_deleted: bool, table_errors?, auth_error? }` — 200 even on partial auth failure so client can show graceful message.
+- Invoked from `ProfileScreen.handleDeleteAccount` via `supabase.functions.invoke("punchpal-delete-account")`.
 
 ---
 
@@ -232,7 +239,7 @@ Mixed → median complexity with fresh combinations.
 - **AuthScreen** — optional sign-up/sign-in, opened from Profile. On anonymous-user sign-up, calls `supabase.auth.updateUser({email, password})` to **upgrade** the anon UID (preserves all guest progress). Sign-in uses standard `signInWithPassword`. No email confirmation flow.
 - **HomeScreen** — PunchPal logo + title, StreakCard, WorkoutCard, "Get Fresh Workout" regenerate button, **AdMob banner** absolutely positioned above the tab bar via `useBottomTabBarHeight()`. Regenerate button triggers a preloaded AdMob interstitial then loads a fresh workout.
 - **TimerScreen** — round timer (3 min work / 1 min rest), combo card with notation (`b` suffix expanded as "to the body" for speech), full description, voice callouts via the coach-voice picker, beep at last 5s of each phase, post-workout rating modal (Too Easy / Just Right / Too Hard / Skip), post-rating AdMob interstitial before navigating Home (suppressed on early-exit flow).
-- **ProfileScreen** — boxing level changer, streaks, training stats (workouts / rounds / minutes), workout history with real workout names, account section (anon vs signed-in), delete account, privacy policy link, support link, dev preview button for rating modal. Achievements UI removed; tracking still runs silently in the store.
+- **ProfileScreen** — boxing level changer, streaks, training stats (workouts / rounds / minutes), workout history with real workout names, account section (anon vs signed-in), delete account, privacy policy link, support link. Achievements UI removed; tracking still runs silently in the store.
 - **WorkoutLibraryScreen** — implemented but route commented out in `RootNavigator.tsx`
 - **(PaywallScreen DELETED — RevenueCat removed entirely)**
 
@@ -334,7 +341,42 @@ supabase functions deploy punchpal-generate-workout --project-ref zeskhorwddxyjh
 
 ## What's Been Done (Recent History)
 
-**This session (2026-05-11 PM — AdMob + voice upgrade + Profile cleanup + EAS setup):**
+**This session (2026-05-15 — auth deadlock root cause, real account deletion, signup UX fixes):**
+- **Sign-up indefinite spinner / Sign Out / Delete Account "nothing happens" — single root cause found** — all three symptoms traced to a circular await in supabase-js v2. `ProfileScreen.tsx` had `supabase.auth.onAuthStateChange(() => refresh())` where `refresh()` called `supabase.auth.getUser()`. supabase-js's `_notifyAllSubscribers` does `await Promise.all(callbacks)` while the original `updateUser`/`signUp` is still holding the auth lock — the subscriber's `getUser()` queued into `pendingInLock` waiting for that lock to release, but the lock holder was blocked on the subscriber. Classic deadlock. Verified by reading `node_modules/@supabase/auth-js/dist/main/GoTrueClient.js` and curl-testing the live signup endpoint (server-side responds in <1s). **Fix:** subscriber now uses the `session` arg passed to the callback directly — no auth method calls inside `onAuthStateChange` ever. Defense-in-depth `withTimeout` wrappers stay in place to catch any future deadlock.
+- **Account deletion now actually works server-side** — discovered TWO root causes by reading migrations: (1) `001_init_schema.sql` enables RLS with SELECT/INSERT/UPDATE policies but **no DELETE policy** on any of the 3 PunchPal tables. With deny-by-default RLS, client-side `supabase.from(TABLES.*).delete()` returns 200 OK with 0 rows affected — silent failure. (2) Auth row deletion requires `auth.admin.deleteUser()` which only the service role can call. Created new Edge Function `punchpal-delete-account` that validates the caller JWT, then uses `SUPABASE_SERVICE_ROLE_KEY` to delete the 3 data tables AND call `auth.admin.deleteUser`. Returns `{data_deleted, auth_deleted, ...errors}` so the client can degrade gracefully if a shared-project FK constraint blocks auth deletion. Client (`ProfileScreen.handleDeleteAccount`) now invokes the function once instead of 4 separate operations. Surfaces server-failure to the user via Alert before navigating, but always runs local cleanup. **End-to-end verified against live function** — fresh test user deleted in 2.8s, JWT immediately invalidated.
+- **Sign-up "Check your email to confirm" message misfiring on anon-upgrade** — earlier success check required `data.user && data.session`, but `supabase.auth.updateUser()` (used for anon→email upgrade) returns `{ data: { user } }` without a session field because the existing session stays valid. Falsely dropped into the email-confirmation branch. Fixed by branching success criteria on whether it was an anon upgrade (`!!data.user`) vs new signUp (`!!(data.user && data.session)`).
+- **AuthScreen keyboard UX** — wrapped ScrollView in `KeyboardAvoidingView` with `behavior="padding"` on iOS, added `keyboardShouldPersistTaps="handled"` so buttons stay tappable with keyboard up, `keyboardDismissMode="on-drag"` so scrolling closes the keyboard, `flexGrow:1` on contentContainer. Email/password fields no longer hidden behind the keyboard.
+- **Sign Out / Delete Account ergonomics** — added immediate tap-confirmation `Haptics.impactAsync(Light)` at the start of both handlers (before `Alert.alert`) so the tap always registers even if something downstream stalls. Wrapped all Supabase calls in 5–8s `Promise.race` timeouts; local state reset + `navigation.reset("Splash")` always run in a `try/finally`-equivalent path, so the user always exits to Splash even if Supabase is unreachable.
+- **getUser → getSession swap throughout AuthScreen** — `supabase.auth.getUser()` makes a server roundtrip and acquires the auth lock; `getSession()` reads the cached JWT instantly with no lock and exposes everything we need (`is_anonymous`, `user.id`, `email`). Avoids a class of hangs.
+
+**Files changed this session:**
+- `mobile/src/screens/AuthScreen.tsx` — `withTimeout` wrapper around auth calls; getSession instead of getUser; KeyboardAvoidingView; anon-upgrade vs signUp success-criteria branching
+- `mobile/src/screens/ProfileScreen.tsx` — onAuthStateChange now uses `session` arg directly; handleSignOut and handleDeleteAccount wrapped in timeouts with always-run local cleanup; delete now invokes the Edge Function; removed unused `TABLES` import
+- `mobile/supabase/functions/punchpal-delete-account/index.ts` — NEW: service-role Edge Function for full account deletion (data + auth row)
+- **Deployed to** `zeskhorwddxyjhhnpgsa`
+
+**This session (2026-05-12 — layout fixes, voice cadence rework, RLS auth fix, workout-end phrases):**
+- **HomeScreen banner overlap fix (round 2)** — first attempt added `tabBarHeight` to `paddingBottom`, made overflow worse. Root cause: react-navigation v6 bottom-tabs is **relative by default**, so the `LinearGradient` is already inset above the tab bar. Replaced the absolute-positioned banner overlay with a flex layout — `BannerAdView` is now a flex sibling of the `ScrollView` inside the `LinearGradient`. Removed `BANNER_RESERVED_HEIGHT` constant and `useBottomTabBarHeight()` call. Button always renders above banner in layout order, no scroll required on iPhone 14+.
+- **Banner ad on TimerScreen** — same flex-sibling pattern. ScrollView takes available space; banner wrapped in `<View style={{ paddingBottom: insets.bottom }}>` to clear the home indicator (TimerScreen is a stack screen, no tab bar). Pause button stays vertically centered with ~90pt of clearance above the banner.
+- **Voice cadence rework on TimerScreen work-phase callouts** —
+  - Removed per-minute "10 seconds" callouts (previously fired at t=130, t=70, t=10)
+  - Added minute markers: "2 minutes left" at t=120, "1 minute left" at t=60, "10 seconds" at t=10
+  - Beeps now only at last 5s of each round (was last 5s of every minute)
+  - Removed dead `tenSecondCalledRef` ref; renamed `lastMinuteTenRef` → `lastMinuteCalloutRef`
+- **Always-show ad on rating modal exit** — both `submitRating` and `skipRating` now call `postWorkoutAd.show(() => navigation.goBack())` directly instead of routing through `exitToHome` which respected the `isEarlyExitRef` flag. Previously the ad was suppressed on early-exit submit/skip; now it fires on every rating-modal dismissal (subject to 30s frequency cap). `isEarlyExitRef` flag is now effectively dead (still set/read but no longer affects ad behavior).
+- **DEV scaffolding cleanup** — added "DEV: Reset Onboarding" button + temporarily force-showed the voice tip step on onboarding so the user could review the screen design. Both the new button and the pre-existing "DEV: Preview Rating Modal" button were removed before end-of-session along with their supporting state and modal JSX. `OnboardingScreen.tsx:65` reverted to `setNeedsVoiceTip(!hasPremiumMale)`.
+- **Marketing URLs consolidated + Terms link added** — Privacy and Support links now point at the new Lovable subdomain (`https://punchpal-ai.lovable.app/privacy` and `/support`). Added a new "Terms of Service" button on Profile pointing at `https://punchpal-ai.lovable.app/terms`. Replaces the old `punchpal-privacy-policy.lovable.app` and `punchpalsupport.lovable.app` URLs.
+- **Supabase RLS auth fix** — `logWorkoutSession` was hitting `42501: new row violates row-level security policy`. Two root causes:
+  - `supabaseClient.ts` was missing `storage: AsyncStorage` config, so JWT sessions weren't persisted across app launches. Added `{ auth: { storage: AsyncStorage, autoRefreshToken: true, persistSession: true, detectSessionInUrl: false } }`.
+  - Zustand-persisted `userId` could drift from the live `auth.uid()`. Added `ensureAuthUserId()` helper in `database-service.ts` that fetches the live session's user.id (signs in anonymously if missing). `logWorkoutSession` and `upsertUserStats` now use `authUserId` instead of the passed-in store userId, guaranteeing `user_id = auth.uid()` matches the RLS check.
+- **Workout-end coach phrases** —
+  - On natural completion (`finishWorkout`): "Workout complete. Every round, you're getting sharper." + "Rate how it felt — it helps me dial in the next workout for you."
+  - On early exit (`endWorkout`): "Workout ended. Showing up is half the fight — every rep is in the bank." + "Rate how it felt — it helps me dial in the next workout for you."
+  - **Bug fix while implementing:** the useEffect at `TimerScreen.tsx:351` was calling `Speech.stop()` whenever `isRunning` flipped to false — which is exactly what the workout-end paths do, so the queued utterances got killed right after being queued. Added `!showRating` guard so the workout-end phrases play through the rating-modal transition.
+- **TEMP: voice tip force-show** — `OnboardingScreen.tsx:65` is hardcoded to `setNeedsVoiceTip(true)` so the user can preview the voice-upgrade screen design via DEV: Reset Onboarding. **Must be reverted to `setNeedsVoiceTip(!hasPremiumMale)` before shipping.**
+- **Memory updated** — added project memory that PunchPal moved off Vibecode preview, EAS dev build is the testing surface; references to "Vibecode" in `mobile/CLAUDE.md` are stale template boilerplate.
+
+**Previous session (2026-05-11 PM — AdMob + voice upgrade + Profile cleanup + EAS setup):**
 - **AdMob integration** — added `react-native-google-mobile-ads` 16.3.x with banner on Home and two interstitials (pre-generation + post-workout). 30s shared frequency cap, non-personalized requests, no ATT prompt.
 - **`FORCE_TEST_ADS` toggle** — flag in `mobile/src/lib/ads.ts` that forces Google test ads in production builds when set to `true`. Replaces the Xcode device-ID capture workflow because user is Windows-only.
 - **Graceful Expo Go degradation for AdMob** — conditional `require()` of GMA with try/catch in `ads.ts`. Native module unavailable → all ad code no-ops → app keeps running in Expo Go without ads. Lets fast dev iteration coexist with a native ad module.
@@ -384,6 +426,8 @@ supabase functions deploy punchpal-generate-workout --project-ref zeskhorwddxyjh
 - **Update App Privacy questionnaire** in App Store Connect → PunchPal AI Coach → App Privacy. Declare AdMob's data types under "Third-Party Advertising".
 - **Stale `extra.grokApiKey` reference in `app.json`** — leftover from Vibecode; harmless but worth deleting next time app.json is edited
 - **Delete orphan empty Expo project** `@crisguido/punchpal` (mistakenly created during `eas init --force`). Settings → Delete Project in the dashboard.
+- **Orphaned anonymous Supabase users** — accumulated from app launches before the AsyncStorage session-persistence fix. Each cold launch created a fresh anonymous user. Clean up via Supabase dashboard → Authentication → Users when convenient. Not blocking. (Note: the new `punchpal-delete-account` Edge Function does NOT retroactively clean these up — it only fires when the user taps Delete Account in-app.)
+- **Real-user account deletion may partially fail on shared project** — `auth.admin.deleteUser()` can fail with "Database error deleting user" if another Stratega app's table has a FK to `auth.users` without `ON DELETE CASCADE`. Edge Function returns 200 with `auth_deleted: false, auth_error: "..."` and the user data IS gone. If this surfaces, query `pg_constraint WHERE confrelid = 'auth.users'::regclass` to find the offending FK (cross-app concern, fix in the owning app's migrations).
 
 ### Not yet wired but schema-ready
 - `combo_progress` table — never written to. Would enable per-combo struggle detection without rating UI.
@@ -422,6 +466,13 @@ supabase functions deploy punchpal-generate-workout --project-ref zeskhorwddxyjh
 - **Conditional `require()` pattern for native AdMob module** — preserves Expo Go iteration speed; static GMA imports crash Expo Go via `TurboModuleRegistry.getEnforcing`
 - **Coach voice priority: generic Siri male first, then named voices starting with Nathan** — user confirmed Voice 1 sounds best on their device but is unnamed, so picker tries Voice 1 first while onboarding tip recommends Nathan (a real name users can find in Settings)
 - **Achievements UI removed but underlying tracking kept** — user wanted the visual section gone; the achievement system in the store still runs silently, ready to re-render later
+- **Banner ad placed as flex sibling of ScrollView (not absolute overlay)** — root cause analysis showed react-navigation v6 bottom-tabs is relative by default, so absolute positioning + `tabBarHeight` math was double-counting. Flex layout is simpler and guarantees the button-above-banner order regardless of device size.
+- **Always-show ad on every rating-modal exit (submit AND skip)** — previously suppressed on early-exit submit/skip to be less aggressive. User explicitly wants max impressions; the rating modal is the natural ad break and the 30s frequency cap prevents abuse.
+- **Workout-end voice phrases: completion is performance-focused, early-exit is effort-focused** — completion gets "you're getting sharper every round"; early-exit gets "showing up is half the fight — every rep is in the bank". Both end with the rating prompt so the user understands what the modal is asking.
+- **AsyncStorage for Supabase auth in React Native** — required for RLS-protected tables to work across app launches. Without it the JWT was in-memory only, so cold launches had no auth.uid() for the policy check even though Zustand had persisted a userId. Combined with `ensureAuthUserId()` defensive helper for inserts.
+- **Account deletion via Edge Function, not client-side cascade** — chose a single service-role Edge Function over "add DELETE RLS policies + keep deletes client-side" because: client still cannot call `auth.admin.deleteUser` (service role only), one round trip beats four, and service role bypasses RLS so no policy migrations needed. Returns partial-success metadata so client can degrade gracefully on shared-project FK blocks.
+- **Never call `supabase.auth.*` inside `onAuthStateChange` callbacks** — supabase-js awaits each subscriber's returned promise while still holding its internal auth lock. Any auth method call from inside the callback queues into `pendingInLock` and deadlocks the original signUp/updateUser. Use the `session` arg passed to the callback instead. If you absolutely need a method call, wrap in `setTimeout(..., 0)` to defer past the lock release.
+- **Anon-upgrade success criteria differs from new-signup** — `updateUser({email, password})` keeps the existing session valid and returns `{ data: { user } }` without a session field. New `signUp` with email confirmations off returns both `user` and `session`. Branching on the actual call path is required to avoid spurious "check your email" messages when the user is already signed in.
 
 ---
 
@@ -433,6 +484,9 @@ Saved to user-global memory (`~/.claude/projects/<...>/memory/`):
 - **Native modules + Expo Go**: when adding GMA / RevenueCat / etc. to a project still tested via Expo Go, wrap require() in try/catch and guard everything — static imports trigger TurboModule crashes
 - **`FORCE_TEST_ADS` toggle in PunchPal**: must flip to `false` before App Store submission; documented because user is Windows-only and skips device-ID capture
 - **User is Windows-only — never suggest Xcode / Mac / Apple Devices flows**: relevant across all Stratega projects; for iOS debugging prefer in-app debug UI, build-time flags, EAS dashboard logs, or Settings → Privacy → Analytics Data
+- **Prefer `getSession()` over `getUser()` in client code paths**: getUser() does a server roundtrip and acquires the auth lock; getSession() reads the cached JWT instantly with no lock. The `is_anonymous` flag and user id are already in the cached JWT.
+- **NEVER call `supabase.auth.*` inside `onAuthStateChange` callbacks**: supabase-js v2 awaits subscriber callbacks while still holding the auth lock; calling getUser/getSession/updateUser/signOut from in here deadlocks signUp/updateUser/signInWithPassword. Use the `session` arg directly.
+- **Missing DELETE RLS policy fails silently**: RLS is deny-by-default; without a DELETE policy, `.delete()` returns 200 with 0 rows and no error. Audit every table you call `.delete()` on, or funnel deletes through an Edge Function with service role.
 
 ---
 
