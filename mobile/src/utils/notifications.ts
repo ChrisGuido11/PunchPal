@@ -22,11 +22,13 @@ export async function ensureDailyReminder(): Promise<boolean> {
         title: "Time to train",
         body: "Keep your streak alive. Knock out a round today!",
       },
+      // DAILY is the cross-platform trigger for "every day at HH:MM local time".
+      // CALENDAR is iOS-only and throws on Android with the exact error message
+      // "Trigger of type: calendar is not supported on Android."
       trigger: {
-        type: SchedulableTriggerInputTypes.CALENDAR,
+        type: SchedulableTriggerInputTypes.DAILY,
         hour: 9,
         minute: 0,
-        repeats: true,
       },
     });
 
