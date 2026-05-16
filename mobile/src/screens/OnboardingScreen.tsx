@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, Pressable, ScrollView, Linking } from "react-native";
+import { View, Text, Pressable, ScrollView, Linking, Platform } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -52,6 +52,13 @@ export default function OnboardingScreen({ navigation }: Props) {
   );
 
   useEffect(() => {
+    // The voice tip (Nathan recommendation + iOS Settings deep link) is iOS-only.
+    // Google TTS on Android ships acceptable voices by default and the Settings
+    // path is different — skip the step rather than maintain a separate variant.
+    if (Platform.OS !== "ios") {
+      setNeedsVoiceTip(false);
+      return;
+    }
     let cancelled = false;
     Speech.getAvailableVoicesAsync()
       .then((voices) => {

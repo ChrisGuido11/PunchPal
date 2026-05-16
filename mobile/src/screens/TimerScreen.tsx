@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Pressable, ScrollView, Linking } from "react-native";
+import { View, Text, Pressable, ScrollView, Linking, Platform } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
@@ -70,36 +70,55 @@ function TimerScreen({ navigation }: Props) {
         const enUs = voices.filter((v) => v.language.startsWith("en"));
         const nonDefault = enUs.filter((v) => v.quality !== Speech.VoiceQuality.Default);
 
-        // Priority 1: generic Siri male voice (iOS "Voice 1") — identifier
-        // looks like com.apple.ttsbundle.siri_male_en-US_premium. Highest
-        // quality coach voice on a stock iPhone.
-        const pickSiriMale = (pool: Speech.Voice[]) =>
-          pool.find((v) => {
-            const id = v.identifier.toLowerCase();
-            return id.includes("siri") && id.includes("_male_");
-          })?.identifier;
+        let picked: string | undefined;
 
-        // Priority 2: named premium/enhanced male voices in fallback order.
-        // Nathan is the next-best male voice when Siri Voice 1 isn't installed.
-        const preferOrder = ["Nathan", "Aaron", "Evan", "Tom", "Reed", "Fred", "Daniel"];
-        const pickByName = (pool: Speech.Voice[]) => {
-          for (const name of preferOrder) {
-            const match = pool.find(
-              (v) =>
-                v.name.toLowerCase().includes(name.toLowerCase()) ||
-                v.identifier.toLowerCase().includes(name.toLowerCase())
-            );
-            if (match) return match.identifier;
-          }
-          return undefined;
-        };
+        if (Platform.OS === "android") {
+          // Google TTS is the default engine on most Android devices and ships
+          // the highest-quality English voices. Prefer Enhanced en-US voices,
+          // then any en-US, then first non-default. No usable "male coach"
+          // signal exists in Speech.Voice on Android — fall through gracefully.
+          const googleTts = enUs.filter((v) =>
+            v.identifier?.toLowerCase().startsWith("com.google.android.tts:"),
+          );
+          const enhancedGoogle = googleTts.filter(
+            (v) => v.quality === Speech.VoiceQuality.Enhanced,
+          );
+          picked =
+            enhancedGoogle.find((v) => v.language === "en-US")?.identifier ??
+            googleTts.find((v) => v.language === "en-US")?.identifier ??
+            googleTts[0]?.identifier ??
+            nonDefault[0]?.identifier ??
+            enUs[0]?.identifier;
+        } else {
+          // iOS — pick the generic Siri male ("Voice 1") if available, else
+          // fall back through the named premium/enhanced male voice list.
+          const pickSiriMale = (pool: Speech.Voice[]) =>
+            pool.find((v) => {
+              const id = v.identifier.toLowerCase();
+              return id.includes("siri") && id.includes("_male_");
+            })?.identifier;
 
-        const picked =
-          pickSiriMale(nonDefault) ??
-          pickByName(nonDefault) ??
-          nonDefault[0]?.identifier ??
-          pickSiriMale(enUs) ??
-          pickByName(enUs);
+          const preferOrder = ["Nathan", "Aaron", "Evan", "Tom", "Reed", "Fred", "Daniel"];
+          const pickByName = (pool: Speech.Voice[]) => {
+            for (const name of preferOrder) {
+              const match = pool.find(
+                (v) =>
+                  v.name.toLowerCase().includes(name.toLowerCase()) ||
+                  v.identifier.toLowerCase().includes(name.toLowerCase()),
+              );
+              if (match) return match.identifier;
+            }
+            return undefined;
+          };
+
+          picked =
+            pickSiriMale(nonDefault) ??
+            pickByName(nonDefault) ??
+            nonDefault[0]?.identifier ??
+            pickSiriMale(enUs) ??
+            pickByName(enUs);
+        }
+
         setCoachVoiceId(picked);
       })
       .catch(() => {

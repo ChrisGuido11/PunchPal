@@ -47,3 +47,6 @@ expo.log
 
 # Supabase CLI local cache
 supabase/.temp/
+
+# Google Play service account (used by `eas submit --platform android`)
+play-service-account.json
