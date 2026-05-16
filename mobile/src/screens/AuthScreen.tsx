@@ -89,9 +89,12 @@ export default function AuthScreen({ navigation }: Props) {
       //   is not returned. Just having data.user means the upgrade succeeded.
       // - signUp / signInWithPassword: need BOTH user and session. If user is
       //   present but session is null, email confirmation is enabled and pending.
+      // TypeScript narrows updateUser's return as `{ user }` only (no session
+      // key), so guard the .session access with `in` to keep the union happy.
+      const hasSession = "session" in result.data && !!result.data.session;
       const isSuccess = isAnonUpgrade
         ? !!result.data.user
-        : !!(result.data.user && result.data.session);
+        : !!(result.data.user && hasSession);
 
       if (isSuccess && result.data.user) {
         useUserStore.setState({ userId: result.data.user.id });
