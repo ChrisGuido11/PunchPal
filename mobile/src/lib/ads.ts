@@ -57,13 +57,13 @@ const useTestIds = __DEV__ || FORCE_TEST_ADS;
 // Production builds (TestFlight + App Store) auto-switch to these via __DEV__.
 const REAL_BANNER_AD_UNIT_ID = Platform.select({
   ios: "ca-app-pub-8632074296834726/8728863835",
-  android: "ca-app-pub-8632074296834726/3668108840",
+  android: "ca-app-pub-8632074296834726/9712425409",
   default: "",
 }) as string;
 
 const REAL_INTERSTITIAL_AD_UNIT_ID = Platform.select({
   ios: "ca-app-pub-8632074296834726/8623932374",
-  android: "ca-app-pub-8632074296834726/2140238903",
+  android: "ca-app-pub-8632074296834726/6960927537",
   default: "",
 }) as string;
 
