@@ -73,18 +73,25 @@ function TimerScreen({ navigation }: Props) {
         let picked: string | undefined;
 
         if (Platform.OS === "android") {
-          // Google TTS is the default engine on most Android devices and ships
-          // the highest-quality English voices. Prefer Enhanced en-US voices,
-          // then any en-US, then first non-default. No usable "male coach"
-          // signal exists in Speech.Voice on Android — fall through gracefully.
           const googleTts = enUs.filter((v) =>
             v.identifier?.toLowerCase().startsWith("com.google.android.tts:"),
+          );
+          // Google's "Network" voices (identifier ends with `-network`) are
+          // neural cloud-rendered and sound dramatically better than local
+          // synthesis. They aren't flagged as Enhanced in expo-speech so they
+          // get skipped by a quality-only filter. PunchPal is online-only so
+          // requiring network for TTS is fine.
+          const networkGoogle = googleTts.filter((v) =>
+            v.identifier.toLowerCase().includes("-network"),
           );
           const enhancedGoogle = googleTts.filter(
             (v) => v.quality === Speech.VoiceQuality.Enhanced,
           );
           picked =
+            networkGoogle.find((v) => v.language === "en-US")?.identifier ??
+            networkGoogle[0]?.identifier ??
             enhancedGoogle.find((v) => v.language === "en-US")?.identifier ??
+            enhancedGoogle[0]?.identifier ??
             googleTts.find((v) => v.language === "en-US")?.identifier ??
             googleTts[0]?.identifier ??
             nonDefault[0]?.identifier ??
@@ -151,7 +158,9 @@ function TimerScreen({ navigation }: Props) {
       Speech.speak(text, {
         language: "en-US",
         voice: coachVoiceId,
-        rate: 0.95,
+        // Android TTS voices have flatter prosody than iOS Siri voices —
+        // slowing them a notch noticeably reduces the robotic feel.
+        rate: Platform.OS === "android" ? 0.88 : 0.95,
         pitch: 1,
       });
     },

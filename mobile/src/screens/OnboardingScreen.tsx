@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, Pressable, ScrollView, Linking, Platform } from "react-native";
+import { View, Text, Pressable, ScrollView, Linking, Platform, AppState, Alert } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -52,30 +52,53 @@ export default function OnboardingScreen({ navigation }: Props) {
   );
 
   useEffect(() => {
-    // The voice tip (Nathan recommendation + iOS Settings deep link) is iOS-only.
-    // Google TTS on Android ships acceptable voices by default and the Settings
-    // path is different — skip the step rather than maintain a separate variant.
-    if (Platform.OS !== "ios") {
-      setNeedsVoiceTip(false);
-      return;
-    }
     let cancelled = false;
-    Speech.getAvailableVoicesAsync()
-      .then((voices) => {
+
+    const detect = async () => {
+      try {
+        const voices = await Speech.getAvailableVoicesAsync();
         if (cancelled) return;
-        const hasPremiumMale = voices.some((v) => {
-          if (!v.language.startsWith("en")) return false;
-          if (v.quality === Speech.VoiceQuality.Default) return false;
-          const haystack = (v.name + " " + v.identifier).toLowerCase();
-          return PREMIUM_VOICE_HINTS.some((hint) => haystack.includes(hint));
-        });
-        setNeedsVoiceTip(!hasPremiumMale);
-      })
-      .catch(() => {
-        setNeedsVoiceTip(true);
-      });
+        const enVoices = voices.filter((v) => v.language.startsWith("en"));
+
+        if (Platform.OS === "android") {
+          // Android: skip the tip if a Network (neural) OR Enhanced Google
+          // TTS voice is already installed. Otherwise the user is stuck on
+          // the robotic default voice and we should guide them to install one.
+          const googleEn = enVoices.filter((v) =>
+            v.identifier?.toLowerCase().startsWith("com.google.android.tts:"),
+          );
+          const hasGoodVoice = googleEn.some(
+            (v) =>
+              v.identifier.toLowerCase().includes("-network") ||
+              v.quality === Speech.VoiceQuality.Enhanced,
+          );
+          setNeedsVoiceTip(!hasGoodVoice);
+        } else {
+          // iOS: tip recommends Nathan/Aaron/etc. by name. Detect by hint list.
+          const hasPremiumMale = enVoices.some((v) => {
+            if (v.quality === Speech.VoiceQuality.Default) return false;
+            const haystack = (v.name + " " + v.identifier).toLowerCase();
+            return PREMIUM_VOICE_HINTS.some((hint) => haystack.includes(hint));
+          });
+          setNeedsVoiceTip(!hasPremiumMale);
+        }
+      } catch {
+        if (!cancelled) setNeedsVoiceTip(true);
+      }
+    };
+
+    detect();
+
+    // Re-run detection when the user returns from Settings — if they installed
+    // a better voice we want the "Continue" button to reflect that without a
+    // forced relaunch.
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") detect();
+    });
+
     return () => {
       cancelled = true;
+      sub.remove();
     };
   }, []);
 
@@ -127,11 +150,40 @@ export default function OnboardingScreen({ navigation }: Props) {
     }
   };
 
+  const openAndroidTtsSettings = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Opens Android's TTS settings pane directly. The intent action string
+    // is `com.android.settings.TTS_SETTINGS` — the value of the Android
+    // constant Settings.ACTION_TEXT_TO_SPEECH_SETTINGS. NOT to be confused
+    // with the constant's NAME (a common copy-paste bug).
+    //
+    // Try the standard intent first, then the legacy alias some older OEMs
+    // expose. If neither works, surface manual instructions rather than
+    // silently dumping the user into the app's settings (which is useless
+    // for installing TTS voices).
+    const candidates = [
+      "com.android.settings.TTS_SETTINGS",
+      "android.settings.TTS_SETTINGS",
+    ];
+    for (const action of candidates) {
+      try {
+        await Linking.sendIntent(action);
+        return;
+      } catch {
+        // Try the next candidate.
+      }
+    }
+    Alert.alert(
+      "Voice settings unavailable",
+      "Your device doesn't expose a direct shortcut. Open Settings manually: System → Languages & input → Text-to-speech output → tap the gear next to your TTS engine → Install voice data → English (United States) → download Voice II or IV.",
+    );
+  };
+
   const previewVoice = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Speech.speak("Jab, cross, lead hook. Keep your hands up.", {
       language: "en-US",
-      rate: 0.95,
+      rate: Platform.OS === "android" ? 0.88 : 0.95,
       pitch: 1,
     });
   };
@@ -237,58 +289,128 @@ export default function OnboardingScreen({ navigation }: Props) {
               </Text>
             </View>
 
-            <View className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-2xl p-5 mb-4">
-              <Text className="text-white text-lg font-bold mb-2">
-                Download the &quot;Nathan&quot; voice
-              </Text>
-              <Text className="text-gray-400 text-sm leading-6 mb-4">
-                Your iPhone ships with a basic voice that sounds robotic during
-                workouts. Nathan is a free premium Apple voice that&apos;s clear,
-                deep, and natural — perfect for calling out combos.
-              </Text>
-
-              <View className="bg-black/40 rounded-xl p-4 mb-4">
-                <Text className="text-boxing-gold text-xs font-bold uppercase tracking-widest mb-3">
-                  How to download
+            {Platform.OS === "ios" ? (
+              <View className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-2xl p-5 mb-4">
+                <Text className="text-white text-lg font-bold mb-2">
+                  Download the &quot;Nathan&quot; voice
                 </Text>
-                <View className="space-y-2">
-                  <Text className="text-gray-300 text-sm leading-5">
-                    <Text className="text-boxing-red font-bold">1.</Text> Open{" "}
-                    <Text className="text-white font-bold">Settings</Text>
+                <Text className="text-gray-400 text-sm leading-6 mb-4">
+                  Your iPhone ships with a basic voice that sounds robotic during
+                  workouts. Nathan is a free premium Apple voice that&apos;s clear,
+                  deep, and natural — perfect for calling out combos.
+                </Text>
+
+                <View className="bg-black/40 rounded-xl p-4 mb-4">
+                  <Text className="text-boxing-gold text-xs font-bold uppercase tracking-widest mb-3">
+                    How to download
                   </Text>
-                  <Text className="text-gray-300 text-sm leading-5">
-                    <Text className="text-boxing-red font-bold">2.</Text> Tap{" "}
-                    <Text className="text-white font-bold">Accessibility</Text>
-                  </Text>
-                  <Text className="text-gray-300 text-sm leading-5">
-                    <Text className="text-boxing-red font-bold">3.</Text> Tap{" "}
-                    <Text className="text-white font-bold">Spoken Content</Text>{" "}
-                    →{" "}
-                    <Text className="text-white font-bold">Voices</Text> →{" "}
-                    <Text className="text-white font-bold">English</Text>
-                  </Text>
-                  <Text className="text-gray-300 text-sm leading-5">
-                    <Text className="text-boxing-red font-bold">4.</Text> Find{" "}
-                    <Text className="text-white font-bold">Nathan</Text> and tap
-                    the download icon next to it
+                  <View className="space-y-2">
+                    <Text className="text-gray-300 text-sm leading-5">
+                      <Text className="text-boxing-red font-bold">1.</Text> Open{" "}
+                      <Text className="text-white font-bold">Settings</Text>
+                    </Text>
+                    <Text className="text-gray-300 text-sm leading-5">
+                      <Text className="text-boxing-red font-bold">2.</Text> Tap{" "}
+                      <Text className="text-white font-bold">Accessibility</Text>
+                    </Text>
+                    <Text className="text-gray-300 text-sm leading-5">
+                      <Text className="text-boxing-red font-bold">3.</Text> Tap{" "}
+                      <Text className="text-white font-bold">Spoken Content</Text>{" "}
+                      →{" "}
+                      <Text className="text-white font-bold">Voices</Text> →{" "}
+                      <Text className="text-white font-bold">English</Text>
+                    </Text>
+                    <Text className="text-gray-300 text-sm leading-5">
+                      <Text className="text-boxing-red font-bold">4.</Text> Find{" "}
+                      <Text className="text-white font-bold">Nathan</Text> and tap
+                      the download icon next to it
+                    </Text>
+                  </View>
+                  <Text className="text-gray-500 text-xs mt-3 leading-5">
+                    Can&apos;t find Nathan? Any voice with a &quot;Premium&quot;
+                    or &quot;Enhanced&quot; label works — try Aaron, Evan, or
+                    Tom.
                   </Text>
                 </View>
-                <Text className="text-gray-500 text-xs mt-3 leading-5">
-                  Can&apos;t find Nathan? Any voice with a &quot;Premium&quot;
-                  or &quot;Enhanced&quot; label works — try Aaron, Evan, or
-                  Tom.
-                </Text>
+
+                <Pressable onPress={openIosSettings} className="active:opacity-80">
+                  <View className="bg-boxing-red rounded-xl py-4 flex-row items-center justify-center">
+                    <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
+                    <Text className="text-white font-bold ml-2">
+                      Open Settings
+                    </Text>
+                  </View>
+                </Pressable>
               </View>
+            ) : (
+              <View className="bg-boxing-cardBg border-2 border-boxing-cardBorder rounded-2xl p-5 mb-4">
+                <Text className="text-white text-lg font-bold mb-2">
+                  Install a high-quality voice
+                </Text>
+                <Text className="text-gray-400 text-sm leading-6 mb-4">
+                  Your phone ships with a basic voice that sounds robotic
+                  during workouts. Installing Google&apos;s neural voice takes
+                  about 30 seconds and makes a big difference.
+                </Text>
 
-              <Pressable onPress={openIosSettings} className="active:opacity-80">
-                <View className="bg-boxing-red rounded-xl py-4 flex-row items-center justify-center">
-                  <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
-                  <Text className="text-white font-bold ml-2">
-                    Open Settings
+                <View className="bg-black/40 rounded-xl p-4 mb-4">
+                  <Text className="text-boxing-gold text-xs font-bold uppercase tracking-widest mb-3">
+                    How to install
+                  </Text>
+                  <View className="space-y-2">
+                    <Text className="text-gray-300 text-sm leading-5">
+                      <Text className="text-boxing-red font-bold">1.</Text> Tap{" "}
+                      <Text className="text-white font-bold">Open Voice Settings</Text>{" "}
+                      below
+                    </Text>
+                    <Text className="text-gray-300 text-sm leading-5">
+                      <Text className="text-boxing-red font-bold">2.</Text> Tap
+                      the gear icon next to{" "}
+                      <Text className="text-white font-bold">
+                        Speech Services by Google
+                      </Text>
+                    </Text>
+                    <Text className="text-gray-300 text-sm leading-5">
+                      <Text className="text-boxing-red font-bold">3.</Text> Tap{" "}
+                      <Text className="text-white font-bold">
+                        Install voice data
+                      </Text>{" "}
+                      →{" "}
+                      <Text className="text-white font-bold">
+                        English (United States)
+                      </Text>
+                    </Text>
+                    <Text className="text-gray-300 text-sm leading-5">
+                      <Text className="text-boxing-red font-bold">4.</Text> Tap
+                      the download icon next to any{" "}
+                      <Text className="text-white font-bold">Voice II</Text> or{" "}
+                      <Text className="text-white font-bold">Voice IV</Text>{" "}
+                      (these are the neural voices)
+                    </Text>
+                    <Text className="text-gray-300 text-sm leading-5">
+                      <Text className="text-boxing-red font-bold">5.</Text> Return
+                      to PunchPal and tap{" "}
+                      <Text className="text-white font-bold">Continue</Text>
+                    </Text>
+                  </View>
+                  <Text className="text-gray-500 text-xs mt-3 leading-5">
+                    Already have a premium voice installed? Tap Continue to skip.
                   </Text>
                 </View>
-              </Pressable>
-            </View>
+
+                <Pressable
+                  onPress={openAndroidTtsSettings}
+                  className="active:opacity-80"
+                >
+                  <View className="bg-boxing-red rounded-xl py-4 flex-row items-center justify-center">
+                    <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
+                    <Text className="text-white font-bold ml-2">
+                      Open Voice Settings
+                    </Text>
+                  </View>
+                </Pressable>
+              </View>
+            )}
 
             <Pressable onPress={previewVoice} className="active:opacity-70 mb-6">
               <View className="bg-transparent border-2 border-boxing-cardBorder rounded-2xl py-3 flex-row items-center justify-center">
