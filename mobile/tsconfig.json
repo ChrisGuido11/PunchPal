@@ -13,6 +13,7 @@
     "backend/node_modules",
     "backend/generated",
     ".expo",
-    "supabase/**"
+    "supabase/**",
+    "**/__tests__/**"
   ]
 }

@@ -8,10 +8,16 @@ import { Audio } from "expo-av";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { useUserStore } from "../state/userStore";
+import { BoxingLevel } from "../types/workout";
 import { checkAchievements } from "../utils/achievements";
 import { logWorkoutSession } from "../api/database-service";
 import { INTERSTITIAL_AD_UNIT_ID, useInterstitial } from "../lib/ads";
 import BannerAdView from "../components/BannerAdView";
+import {
+  expandForSpeech,
+  generateVariations,
+  pickDeterministic,
+} from "../lib/combo-variations";
 
 type RootStackParamList = {
   Splash: undefined;
@@ -38,6 +44,8 @@ function TimerScreen({ navigation }: Props) {
   const longestStreak = useUserStore((s) => s.longestStreak);
   const unlockedAchievements = useUserStore((s) => s.unlockedAchievements);
   const unlockAchievement = useUserStore((s) => s.unlockAchievement);
+  const workoutMode = useUserStore((s) => s.workoutMode);
+  const boxingLevel = useUserStore((s) => s.boxingLevel);
 
   const [currentRound, setCurrentRound] = useState(1);
   const [phase, setPhase] = useState<Phase>("work");
@@ -48,6 +56,7 @@ function TimerScreen({ navigation }: Props) {
   const [isPaused, setIsPaused] = useState(false);
   const [showRating, setShowRating] = useState(false);
   const [finishedAt, setFinishedAt] = useState<Date | null>(null);
+  const [dynamicComboNotation, setDynamicComboNotation] = useState<string | null>(null);
   const userId = useUserStore((s) => s.userId);
 
   const comboCalloutTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
@@ -58,6 +67,16 @@ function TimerScreen({ navigation }: Props) {
   const restSpokenRef = useRef<number | null>(null);
   const beepSoundRef = useRef<Audio.Sound | null>(null);
   const isEarlyExitRef = useRef(false);
+  // Dynamic-mode scheduling refs. All times are wall-clock ms.
+  const roundStartedAtRef = useRef<number | null>(null);
+  const pausedAtRef = useRef<number | null>(null);
+  const pausedAccumMsRef = useRef<number>(0);
+  const dynamicScheduleRef = useRef<{ notation: string; offsetMs: number }[]>([]);
+  const dynamicFillerScheduleRef = useRef<{ speech: string; offsetMs: number }[]>([]);
+  const dynamicNextIndexRef = useRef<number>(0);
+  const dynamicNextFillerIndexRef = useRef<number>(0);
+  const isRunningRef = useRef<boolean>(false);
+  const isPausedRef = useRef<boolean>(false);
   const [coachVoiceId, setCoachVoiceId] = useState<string | undefined>(undefined);
 
   const postWorkoutAd = useInterstitial(INTERSTITIAL_AD_UNIT_ID);
@@ -195,6 +214,119 @@ function TimerScreen({ navigation }: Props) {
       comboCalloutTimeoutsRef.current = [t1, t2, t3];
     },
     [clearComboCallouts, speak]
+  );
+
+  const cadenceFor = (level: BoxingLevel | null): number => {
+    if (level === "advanced") return 18;
+    if (level === "beginner") return 45;
+    return 28;
+  };
+
+  const TACTICAL_FILLERS = [
+    "reset, circle out",
+    "keep your guard up",
+    "stay loose",
+  ] as const;
+  const MOTIVATIONAL_FILLERS = [
+    "stay sharp",
+    "halfway, push",
+    "finish strong",
+  ] as const;
+
+  const scheduleDynamicFromIndex = useCallback(
+    (comboStartIdx: number, fillerStartIdx: number) => {
+      const startedAt = roundStartedAtRef.current;
+      if (startedAt == null) return;
+
+      const now = Date.now();
+      const pausedAccum = pausedAccumMsRef.current;
+
+      const scheduleEvent = (offsetMs: number, fn: () => void) => {
+        const target = startedAt + offsetMs + pausedAccum;
+        const delay = Math.max(0, target - now);
+        const id = setTimeout(() => {
+          if (!isRunningRef.current || isPausedRef.current) return;
+          fn();
+        }, delay);
+        comboCalloutTimeoutsRef.current.push(id as unknown as NodeJS.Timeout);
+      };
+
+      const combos = dynamicScheduleRef.current;
+      const fillers = dynamicFillerScheduleRef.current;
+
+      for (let i = comboStartIdx; i < combos.length; i++) {
+        const { notation, offsetMs } = combos[i];
+        scheduleEvent(offsetMs, () => {
+          dynamicNextIndexRef.current = i + 1;
+          setDynamicComboNotation(notation);
+          speak(expandForSpeech(notation));
+        });
+      }
+
+      for (let j = fillerStartIdx; j < fillers.length; j++) {
+        const { speech, offsetMs } = fillers[j];
+        scheduleEvent(offsetMs, () => {
+          dynamicNextFillerIndexRef.current = j + 1;
+          speak(speech);
+        });
+      }
+    },
+    [speak]
+  );
+
+  const scheduleDynamicCallouts = useCallback(
+    (anchorNotation: string) => {
+      if (!anchorNotation) return;
+
+      clearComboCallouts();
+      Speech.stop();
+      lastBeepSecondRef.current = null;
+
+      const cadence = cadenceFor(boxingLevel);
+      // Anchor fires at t=4s. We want the last combo to finish before the 10s
+      // end-of-round buffer at t=170s. Allowing ~5s per utterance, the latest
+      // safe start is t=4 + N*cadence ≤ 165, so N ≤ floor(161/cadence).
+      const numCalls = Math.min(9, Math.floor(161 / cadence) + 1);
+      const variations = generateVariations(anchorNotation, numCalls - 1);
+      const combosList = [anchorNotation, ...variations];
+
+      const startedAt = Date.now();
+      roundStartedAtRef.current = startedAt;
+      pausedAccumMsRef.current = 0;
+      pausedAtRef.current = null;
+      dynamicNextIndexRef.current = 0;
+      dynamicNextFillerIndexRef.current = 0;
+
+      const schedule = combosList.map((notation, i) => ({
+        notation,
+        offsetMs: (i * cadence + 4) * 1000,
+      }));
+      dynamicScheduleRef.current = schedule;
+
+      // Tactical filler in the first gap (between anchor and variation 1),
+      // motivational at ~120s. Both queue via Speech.speak — if a combo is
+      // still being uttered when a filler fires, Expo Speech queues them.
+      const tacticalOffsetMs = (Math.floor(cadence * 0.6) + 4) * 1000;
+      const motivationalOffsetMs = 122 * 1000;
+      const fillerSchedule = [
+        {
+          speech: pickDeterministic(TACTICAL_FILLERS, `tactical-${anchorNotation}`),
+          offsetMs: tacticalOffsetMs,
+        },
+        {
+          speech: pickDeterministic(MOTIVATIONAL_FILLERS, `motivational-${anchorNotation}`),
+          offsetMs: motivationalOffsetMs,
+        },
+      ];
+      dynamicFillerScheduleRef.current = fillerSchedule;
+
+      // Show the anchor immediately on the card so the t=4s utterance lines up
+      // with the visual.
+      setDynamicComboNotation(anchorNotation);
+
+      scheduleDynamicFromIndex(0, 0);
+    },
+    [boxingLevel, clearComboCallouts, scheduleDynamicFromIndex]
   );
 
   const playBeep = useCallback(async () => {
@@ -376,6 +508,31 @@ function TimerScreen({ navigation }: Props) {
     return () => clearInterval(interval);
   }, [currentRound, finishWorkout, isPaused, isRunning, phase, startNextRound, startRest, totalRounds]);
 
+  // Keep refs in lockstep with state so the chained setTimeout callbacks
+  // (which capture refs, not state snapshots) see live values.
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+    // On resume in Dynamic mode, account for elapsed pause time and re-schedule
+    // remaining combos / fillers against the offset wall-clock.
+    if (
+      workoutMode === "dynamic" &&
+      !isPaused &&
+      isRunning &&
+      phase === "work" &&
+      pausedAtRef.current != null
+    ) {
+      pausedAccumMsRef.current += Date.now() - pausedAtRef.current;
+      pausedAtRef.current = null;
+      scheduleDynamicFromIndex(
+        dynamicNextIndexRef.current,
+        dynamicNextFillerIndexRef.current
+      );
+    }
+  }, [isPaused, isRunning, phase, scheduleDynamicFromIndex, workoutMode]);
+
   useEffect(() => {
     if (!isRunning || isPaused) {
       if (!showRating) {
@@ -392,12 +549,17 @@ function TimerScreen({ navigation }: Props) {
     }
     if (!combo) return;
 
-    const comboKey = `${currentRound}-${combo.notation}-${combo.name}`;
+    const comboKey = `${currentRound}-${combo.notation}-${combo.name}-${workoutMode}`;
     if (lastComboKeyRef.current !== comboKey) {
       lastComboKeyRef.current = comboKey;
-      scheduleComboCallouts(combo.name, combo.notation, combo.description);
+      if (workoutMode === "dynamic") {
+        scheduleDynamicCallouts(combo.notation);
+      } else {
+        setDynamicComboNotation(null);
+        scheduleComboCallouts(combo.name, combo.notation, combo.description);
+      }
     }
-  }, [clearComboCallouts, combo, currentRound, isPaused, isRunning, phase, scheduleComboCallouts]);
+  }, [clearComboCallouts, combo, currentRound, isPaused, isRunning, phase, scheduleComboCallouts, scheduleDynamicCallouts, workoutMode]);
 
   useEffect(() => {
     if (!isRunning || isPaused) return;
@@ -465,14 +627,16 @@ function TimerScreen({ navigation }: Props) {
       setIsPaused(false);
       return;
     }
-    setIsPaused((p) => {
-      const newPausedState = !p;
-      // When resuming (going from paused to not paused), reset combo key to re-trigger speech
-      if (p && !newPausedState) {
-        lastComboKeyRef.current = null;
-      }
-      return newPausedState;
-    });
+    const enteringPause = !isPaused;
+    if (enteringPause) {
+      pausedAtRef.current = Date.now();
+    } else if (workoutMode === "classic") {
+      // Classic: nudge the comboKey effect to re-fire the standard 25/40/55s
+      // schedule from the top. Dynamic re-anchoring is handled in the
+      // isPaused sync useEffect.
+      lastComboKeyRef.current = null;
+    }
+    setIsPaused(enteringPause);
   };
 
   const endWorkout = () => {
@@ -573,6 +737,23 @@ function TimerScreen({ navigation }: Props) {
               </Text>
               <Text className="text-gray-400 text-sm mt-2" numberOfLines={1}>
                 Next: {combo?.name ?? "---"}
+              </Text>
+            </View>
+          ) : workoutMode === "dynamic" ? (
+            <View className="w-full bg-[#1A1A1A] rounded-2xl p-5 mb-6">
+              <Text className="text-white/70 text-xs font-bold uppercase tracking-widest mb-2" numberOfLines={1}>
+                Combo
+              </Text>
+              <Text
+                className="text-boxing-red font-black tracking-wider mb-3"
+                style={{ fontSize: 48, lineHeight: 52 }}
+                adjustsFontSizeToFit
+                numberOfLines={1}
+              >
+                {dynamicComboNotation ?? combo?.notation ?? "---"}
+              </Text>
+              <Text className="text-gray-500 text-xs" numberOfLines={1}>
+                Next round: {combos[(currentComboIndex + 1) % combos.length]?.name ?? "---"}
               </Text>
             </View>
           ) : (

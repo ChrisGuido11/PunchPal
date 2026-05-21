@@ -8,6 +8,7 @@ import { useUserStore } from "../state/userStore";
 import { generateWorkout } from "../api/workout-generator";
 import WorkoutCard from "../components/WorkoutCard";
 import StreakCard from "../components/StreakCard";
+import WorkoutModeToggle from "../components/WorkoutModeToggle";
 import PulsingEnergyLoader from "../components/PulsingEnergyLoader";
 import BannerAdView from "../components/BannerAdView";
 import { upsertUserStats } from "../api/database-service";
@@ -147,6 +148,7 @@ export default function HomeScreen({ navigation }: Props) {
               currentStreak={currentStreak}
               longestStreak={longestStreak}
             />
+            <WorkoutModeToggle />
             <WorkoutCard
               workout={currentWorkout}
               onStartTraining={handleStartTraining}

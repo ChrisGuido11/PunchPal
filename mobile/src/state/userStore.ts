@@ -3,6 +3,8 @@ import { createJSONStorage, persist } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { BoxingLevel, WorkoutPlan, WorkoutHistory, SavedWorkout } from "../types/workout";
 
+export type WorkoutMode = "classic" | "dynamic";
+
 interface UserState {
   userId: string | null;
   hasCompletedOnboarding: boolean;
@@ -15,6 +17,8 @@ interface UserState {
   currentStreak: number;
   longestStreak: number;
   unlockedAchievements: string[];
+  workoutMode: WorkoutMode;
+  workoutModeMigratedAt: string | null;
 
   setUserId: (id: string | null) => void;
   setHasCompletedOnboarding: (completed: boolean) => void;
@@ -26,6 +30,7 @@ interface UserState {
   unlockAchievement: (achievementId: string) => void;
   toggleFavorite: (workoutId: string, workout: SavedWorkout) => void;
   addToRecentlyCompleted: (workout: SavedWorkout) => void;
+  setWorkoutMode: (mode: WorkoutMode) => void;
 }
 
 const calculateStreak = (workoutHistory: WorkoutHistory[]): { currentStreak: number; longestStreak: number } => {
@@ -91,11 +96,28 @@ export const useUserStore = create<UserState>()(
       currentStreak: 0,
       longestStreak: 0,
       unlockedAchievements: [],
+      workoutMode: "classic",
+      workoutModeMigratedAt: null,
 
       setUserId: (id) => set({ userId: id }),
 
+      // Defensive stamp: a brand-new install hits this when the user completes
+      // onboarding before the persist migration has a chance to fire on a
+      // previously-stored state. Without this, fresh users would default to
+      // Classic via the initial state above instead of Dynamic.
       setHasCompletedOnboarding: (completed) =>
-        set({ hasCompletedOnboarding: completed }),
+        set((s) => {
+          if (completed && !s.workoutModeMigratedAt) {
+            return {
+              hasCompletedOnboarding: completed,
+              workoutMode: "dynamic",
+              workoutModeMigratedAt: new Date().toISOString(),
+            };
+          }
+          return { hasCompletedOnboarding: completed };
+        }),
+
+      setWorkoutMode: (mode) => set({ workoutMode: mode }),
 
       setBoxingLevel: (level) => set({ boxingLevel: level, currentWorkout: null }),
 
@@ -174,6 +196,19 @@ export const useUserStore = create<UserState>()(
     {
       name: "punchpal-user-store",
       storage: createJSONStorage(() => AsyncStorage),
+      version: 1,
+      migrate: (persistedState: unknown, fromVersion: number) => {
+        if (!persistedState || typeof persistedState !== "object") {
+          return persistedState as UserState;
+        }
+        const state = persistedState as Partial<UserState>;
+        if (fromVersion < 1 && !state.workoutModeMigratedAt) {
+          const wasExistingUser = state.hasCompletedOnboarding === true;
+          state.workoutMode = wasExistingUser ? "classic" : "dynamic";
+          state.workoutModeMigratedAt = new Date().toISOString();
+        }
+        return state as UserState;
+      },
     }
   )
 );
