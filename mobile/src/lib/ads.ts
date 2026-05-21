@@ -17,7 +17,7 @@ import type {
 //
 // MUST be set to `false` before submitting the final build to the App Store.
 // ============================================================
-const FORCE_TEST_ADS = false;
+const FORCE_TEST_ADS = true;
 
 // Optional: paste specific device IDs here if you ever capture them
 // (via Xcode console or AdMob diagnostic logs). Not required when
