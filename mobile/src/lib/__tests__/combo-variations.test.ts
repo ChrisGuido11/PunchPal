@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { expandForSpeech, generateVariations, pickDeterministic } from "../combo-variations";
+import {
+  estimateSpeechDuration,
+  expandForDisplay,
+  expandForSpeech,
+  generateVariations,
+  hashCombo,
+  parse,
+  pickDeterministic,
+  serialize,
+} from "../combo-variations";
 
 const parsePunches = (notation: string): number[] => {
   if (!notation) return [];
@@ -13,7 +22,14 @@ const parsePunches = (notation: string): number[] => {
     });
 };
 
-describe("generateVariations", () => {
+const countNonPunchTokens = (notation: string): number =>
+  notation
+    .split("-")
+    .filter((p) => p.trim() && !/^[1-6]b?$/i.test(p.trim())).length;
+
+// === legacy back-compat tests (v4) ===
+
+describe("generateVariations (legacy pure-punch back-compat)", () => {
   test("deterministic for same anchor and count", () => {
     const a = generateVariations("1-2-3", 5);
     const b = generateVariations("1-2-3", 5);
@@ -94,7 +110,7 @@ describe("generateVariations", () => {
     expect(generateVariations("1-2-3", 9).length).toBeLessThanOrEqual(9);
   });
 
-  test("body suffix preserved through variations", () => {
+  test("body suffix preserved through variations (no tier → pure-punch only)", () => {
     const result = generateVariations("1-2b-3", 9);
     for (const v of result) {
       expect(/^[1-6](b)?(-[1-6](b)?)*$/i.test(v)).toBe(true);
@@ -102,7 +118,7 @@ describe("generateVariations", () => {
   });
 });
 
-describe("expandForSpeech", () => {
+describe("expandForSpeech (legacy pure-punch)", () => {
   test("expands single-punch notation", () => {
     expect(expandForSpeech("1")).toBe("one");
     expect(expandForSpeech("3b")).toBe("three to the body");
@@ -140,5 +156,349 @@ describe("pickDeterministic", () => {
       picks.add(pickDeterministic(arr, `seed-${i}`));
     }
     expect(picks.size).toBeGreaterThan(1);
+  });
+});
+
+// === v5 grammar / parse / serialize ===
+
+describe("parse (v5 grammar)", () => {
+  test("parses pure-punch notations", () => {
+    const tokens = parse("1-2-3");
+    expect(tokens.length).toBe(3);
+    expect(tokens.every((t) => t.kind === "punch")).toBe(true);
+  });
+
+  test("parses body suffix (lower and upper case)", () => {
+    expect(parse("2b")[0]).toEqual({ kind: "punch", n: 2, body: true });
+    expect(parse("2B")[0]).toEqual({ kind: "punch", n: 2, body: true });
+  });
+
+  test("parses embedded defense token", () => {
+    const tokens = parse("1-2-slip_right-3");
+    expect(tokens[2]).toEqual({ kind: "defense", move: "slip_right" });
+  });
+
+  test("parses embedded footwork token", () => {
+    const tokens = parse("1-pivot_left-2");
+    expect(tokens[1]).toEqual({ kind: "footwork", move: "pivot_left" });
+  });
+
+  test("parses feint token", () => {
+    const tokens = parse("feint_jab-2-3");
+    expect(tokens[0]).toEqual({ kind: "feint", move: "feint_jab" });
+  });
+
+  test("parses all 8 directional defense moves", () => {
+    for (const m of [
+      "slip_left",
+      "slip_right",
+      "roll_left",
+      "roll_right",
+      "block_left",
+      "block_right",
+      "parry_left",
+      "parry_right",
+    ]) {
+      expect(() => parse(`1-${m}-2`)).not.toThrow();
+    }
+  });
+
+  test("parses all 6 footwork moves", () => {
+    for (const m of [
+      "pivot_left",
+      "pivot_right",
+      "step_back",
+      "step_in",
+      "shuffle_left",
+      "shuffle_right",
+    ]) {
+      expect(() => parse(`1-${m}-2`)).not.toThrow();
+    }
+  });
+
+  test("parses all 6 feint moves", () => {
+    for (const m of [
+      "feint_jab",
+      "feint_cross",
+      "feint_hook",
+      "feint_uppercut",
+      "feint_high",
+      "feint_low",
+    ]) {
+      expect(() => parse(`${m}-2`)).not.toThrow();
+    }
+  });
+
+  test("rejects empty notation", () => {
+    expect(() => parse("")).toThrow();
+    expect(() => parse("   ")).toThrow();
+  });
+
+  test("rejects invalid token", () => {
+    expect(() => parse("7-2")).toThrow();
+    expect(() => parse("garbage")).toThrow();
+    expect(() => parse("slip_diagonal")).toThrow();
+  });
+
+  test("rejects combo with no punches (§7.3)", () => {
+    expect(() => parse("slip_left")).toThrow();
+  });
+
+  test("rejects combo ending in non-punch (§7.3)", () => {
+    expect(() => parse("1-2-slip_right")).toThrow();
+    expect(() => parse("1-pivot_left")).toThrow();
+  });
+
+  test("rejects two consecutive non-punches (§7.3)", () => {
+    expect(() => parse("1-slip_left-pivot_right-2")).toThrow();
+    expect(() => parse("feint_jab-pivot_left-2")).toThrow();
+  });
+
+  test("rejects more than 3 non-punch tokens (§7.3)", () => {
+    expect(() =>
+      parse("1-slip_left-2-pivot_right-3-roll_left-4-feint_jab-5")
+    ).toThrow();
+  });
+
+  test("rejects more than 8 total tokens (§7.3)", () => {
+    expect(() => parse("1-2-3-4-1-2-3-4-1")).toThrow();
+  });
+
+  test("accepts valid intermediate combo with single embedded move", () => {
+    expect(() => parse("1-2-slip_right-3")).not.toThrow();
+  });
+
+  test("accepts valid advanced combo with multiple embedded moves", () => {
+    expect(() =>
+      parse("1-slip_left-2-pivot_right-3b-roll_left-4")
+    ).not.toThrow();
+  });
+});
+
+describe("serialize", () => {
+  test("round-trips with parse", () => {
+    for (const n of [
+      "1",
+      "1-2",
+      "1-2-3",
+      "1-2b-3",
+      "1-2-slip_right-3",
+      "feint_jab-2-3",
+      "1-slip_left-2-pivot_right-3b-4",
+    ]) {
+      expect(serialize(parse(n))).toBe(n);
+    }
+  });
+
+  test("canonicalizes case (uppercase b → lower)", () => {
+    expect(serialize(parse("1-2B-3"))).toBe("1-2b-3");
+  });
+});
+
+// === expandForSpeech (v5) ===
+
+describe("expandForSpeech (v5 embedded tokens)", () => {
+  test("expands defense tokens with space", () => {
+    expect(expandForSpeech("1-2-slip_right-3")).toBe("one, two, slip right, three");
+    expect(expandForSpeech("1-roll_left-2")).toBe("one, roll left, two");
+  });
+
+  test("expands footwork tokens with space", () => {
+    expect(expandForSpeech("1-pivot_left-2")).toBe("one, pivot left, two");
+    expect(expandForSpeech("1-step_back-2")).toBe("one, step back, two");
+  });
+
+  test("expands feint tokens with space", () => {
+    expect(expandForSpeech("feint_jab-2-3")).toBe("feint jab, two, three");
+    expect(expandForSpeech("1-feint_low-2")).toBe("one, feint low, two");
+  });
+
+  test("expands combined embedded combo", () => {
+    expect(expandForSpeech("1-2-roll_left-3b-pivot_right-4")).toBe(
+      "one, two, roll left, three to the body, pivot right, four"
+    );
+  });
+
+  test("returns empty for invalid grammar", () => {
+    expect(expandForSpeech("1-slip_left-pivot_right-2")).toBe(""); // consecutive non-punch
+    expect(expandForSpeech("slip_left")).toBe(""); // no punch
+  });
+});
+
+// === expandForDisplay ===
+
+describe("expandForDisplay", () => {
+  test("pure-punch combo passes through unchanged", () => {
+    expect(expandForDisplay("1-2-3")).toBe("1-2-3");
+    expect(expandForDisplay("1-1-2")).toBe("1-1-2");
+  });
+
+  test("body shot punches keep the b suffix", () => {
+    expect(expandForDisplay("1-2b-3")).toBe("1-2b-3");
+    expect(expandForDisplay("3b")).toBe("3b");
+  });
+
+  test("defense tokens drop the underscore for a space", () => {
+    expect(expandForDisplay("1-slip_right-3")).toBe("1-slip right-3");
+    expect(expandForDisplay("1-roll_left-2")).toBe("1-roll left-2");
+    expect(expandForDisplay("1-block_left-2")).toBe("1-block left-2");
+    expect(expandForDisplay("1-parry_right-2")).toBe("1-parry right-2");
+  });
+
+  test("footwork and feint tokens humanize", () => {
+    expect(expandForDisplay("1-pivot_left-2")).toBe("1-pivot left-2");
+    expect(expandForDisplay("1-step_back-2")).toBe("1-step back-2");
+    expect(expandForDisplay("1-shuffle_right-2")).toBe("1-shuffle right-2");
+    expect(expandForDisplay("feint_jab-2-3")).toBe("feint jab-2-3");
+  });
+
+  test("complex combo with multiple embedded tokens", () => {
+    expect(expandForDisplay("1-2-roll_left-3b-pivot_right-4")).toBe(
+      "1-2-roll left-3b-pivot right-4"
+    );
+  });
+
+  test("returns raw notation as fallback when parse fails", () => {
+    expect(expandForDisplay("garbage")).toBe("garbage");
+    expect(expandForDisplay("9-2")).toBe("9-2");
+    expect(expandForDisplay("slip_left")).toBe("slip_left"); // no punch — invalid grammar
+  });
+});
+
+// === estimateSpeechDuration ===
+
+describe("estimateSpeechDuration", () => {
+  test("returns at least 1000ms even for tiny speech", () => {
+    expect(estimateSpeechDuration("one", "ios")).toBeGreaterThanOrEqual(1000);
+    expect(estimateSpeechDuration("", "ios")).toBe(1000);
+  });
+
+  test("clamps to 8000ms for very long speech", () => {
+    const long = Array.from({ length: 200 }, () => "word").join(", ");
+    expect(estimateSpeechDuration(long, "ios")).toBeLessThanOrEqual(8000);
+  });
+
+  test("android takes longer per word than ios", () => {
+    const speech = "one, two, three, four, five, six";
+    const ios = estimateSpeechDuration(speech, "ios");
+    const android = estimateSpeechDuration(speech, "android");
+    expect(android).toBeGreaterThanOrEqual(ios);
+  });
+
+  test("scales with word count", () => {
+    const short = estimateSpeechDuration("one, two", "ios");
+    const long = estimateSpeechDuration(
+      "one, two, three, four, five, six",
+      "ios"
+    );
+    expect(long).toBeGreaterThan(short);
+  });
+
+  test("returns reasonable values for typical combos", () => {
+    // "one, two, slip right, three" — 5 words → 5*400 + 300 = 2300ms on ios
+    const ms = estimateSpeechDuration("one, two, slip right, three", "ios");
+    expect(ms).toBeGreaterThan(1500);
+    expect(ms).toBeLessThan(4000);
+  });
+});
+
+// === hashCombo ===
+
+describe("hashCombo", () => {
+  test("returns 8-char hex string", () => {
+    const h = hashCombo("1-2-3");
+    expect(h.length).toBe(8);
+    expect(/^[0-9a-f]{8}$/.test(h)).toBe(true);
+  });
+
+  test("stable across equivalent notations (case-canonical)", () => {
+    expect(hashCombo("1-2B-3")).toBe(hashCombo("1-2b-3"));
+  });
+
+  test("different notations produce different hashes", () => {
+    const hashes = new Set([
+      hashCombo("1-2-3"),
+      hashCombo("1-2-4"),
+      hashCombo("1-2-slip_right-3"),
+      hashCombo("feint_jab-2-3"),
+    ]);
+    expect(hashes.size).toBe(4);
+  });
+
+  test("falls back to raw string for unparseable input", () => {
+    expect(hashCombo("garbage").length).toBe(8);
+  });
+});
+
+// === tier-aware variations ===
+
+describe("generateVariations (tier)", () => {
+  test("tier 1-3: variations contain ONLY punches", () => {
+    for (const tier of [1, 2, 3] as const) {
+      const result = generateVariations("1-2-3", 9, tier);
+      for (const v of result) {
+        expect(countNonPunchTokens(v)).toBe(0);
+      }
+    }
+  });
+
+  test("tier 4-6: variations have at most 2 non-punch tokens", () => {
+    for (const tier of [4, 5, 6] as const) {
+      const result = generateVariations("1-2-3", 9, tier);
+      for (const v of result) {
+        expect(countNonPunchTokens(v)).toBeLessThanOrEqual(2);
+      }
+    }
+  });
+
+  test("tier 7-9: variations have at most 3 non-punch tokens", () => {
+    for (const tier of [7, 8, 9] as const) {
+      const result = generateVariations("1-2-3", 9, tier);
+      for (const v of result) {
+        expect(countNonPunchTokens(v)).toBeLessThanOrEqual(3);
+      }
+    }
+  });
+
+  test("tier 5: at least one variation contains an embedded move", () => {
+    const result = generateVariations("1-2-3", 9, 5);
+    const anyEmbedded = result.some((v) => countNonPunchTokens(v) > 0);
+    expect(anyEmbedded).toBe(true);
+  });
+
+  test("preserves at least one embedded move from anchor (intermediate)", () => {
+    const result = generateVariations("1-2-slip_right-3", 9, 5);
+    for (const v of result) {
+      // Each variation must contain slip_right (the anchor's only embedded move).
+      expect(v.includes("slip_right")).toBe(true);
+    }
+  });
+
+  test("preserves at least one embedded move from anchor (advanced multi-move)", () => {
+    const result = generateVariations("1-slip_left-2-pivot_right-3", 9, 8);
+    for (const v of result) {
+      // At least ONE of the anchor's embedded moves survives.
+      const preserved =
+        v.includes("slip_left") || v.includes("pivot_right");
+      expect(preserved).toBe(true);
+    }
+  });
+
+  test("variations are valid v5 notation (round-trip parse)", () => {
+    const result = generateVariations("1-2-slip_right-3", 9, 5);
+    for (const v of result) {
+      expect(() => parse(v)).not.toThrow();
+    }
+  });
+
+  test("deterministic across calls with tier", () => {
+    const a = generateVariations("1-2-slip_right-3", 5, 5);
+    const b = generateVariations("1-2-slip_right-3", 5, 5);
+    expect(a).toEqual(b);
+  });
+
+  test("returns empty for anchor that fails v5 grammar", () => {
+    // Anchor "slip_left" has no punches — invalid.
+    expect(generateVariations("slip_left", 5, 5)).toEqual([]);
   });
 });

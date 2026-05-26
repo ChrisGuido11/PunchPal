@@ -1,6 +1,6 @@
 import { supabase, isSupabaseEnabled } from "../lib/supabaseClient";
 import { useUserStore } from "../state/userStore";
-import { getUserStats, upsertUserStats } from "./database-service";
+import { upsertUserStats } from "./database-service";
 import { BoxingLevel } from "../types/workout";
 
 /**
@@ -39,7 +39,6 @@ export async function initializeUser(): Promise<string | null> {
       await syncUserStats(userId, userLevel);
     }
 
-    console.log("User initialized:", userId);
     return userId;
   } catch (error) {
     console.error("Error initializing user:", error);
@@ -48,7 +47,9 @@ export async function initializeUser(): Promise<string | null> {
 }
 
 /**
- * Sync local user stats to Supabase
+ * Sync local user stats to Supabase. Touches the durable fields only — does
+ * NOT write nextLevelProgress or progression-cap state (those are owned by
+ * the rating-driven `computeProgression` flow in TimerScreen).
  */
 export async function syncUserStats(userId: string, boxingLevel: BoxingLevel): Promise<void> {
   if (!isSupabaseEnabled()) return;
@@ -65,43 +66,8 @@ export async function syncUserStats(userId: string, boxingLevel: BoxingLevel): P
       longestStreak: state.longestStreak,
       lastWorkoutDate: state.lastWorkoutDate,
       combosLearned: state.favoriteWorkouts.length,
-      avgAccuracy: 0, // Will be calculated from workout sessions
-      nextLevelProgress: 0, // Will be calculated based on recent sessions
     });
-
-    console.log("User stats synced");
   } catch (error) {
     console.error("Error syncing user stats:", error);
-  }
-}
-
-/**
- * Get recommended next level based on performance
- */
-export async function getRecommendedLevel(
-  currentLevel: BoxingLevel,
-  userId: string
-): Promise<BoxingLevel> {
-  if (!isSupabaseEnabled()) return currentLevel;
-
-  try {
-    const stats = await getUserStats(userId);
-    if (!stats) return currentLevel;
-
-    // If user has completed at least 5 workouts at current level
-    // and average accuracy is above 80%, recommend level up
-    if (stats.nextLevelProgress >= 80) {
-      const nextLevel: Record<BoxingLevel, BoxingLevel> = {
-        beginner: "intermediate",
-        intermediate: "advanced",
-        advanced: "advanced",
-      };
-      return nextLevel[currentLevel];
-    }
-
-    return currentLevel;
-  } catch (error) {
-    console.error("Error getting recommended level:", error);
-    return currentLevel;
   }
 }

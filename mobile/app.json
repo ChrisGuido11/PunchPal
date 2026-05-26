@@ -8,8 +8,14 @@
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "icon": "./icon.png",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/61f19f38-1c99-48db-b8a7-d53d0238a8a5"
+    },
     "splash": {
-      "image": "./assets/logo.png",
+      "image": "./icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
@@ -30,15 +36,20 @@
       "package": "com.punchpal.app",
       "versionCode": 1,
       "adaptiveIcon": {
+        "foregroundImage": "./icon.png",
         "backgroundColor": "#000000"
       },
-      "permissions": ["com.google.android.gms.permission.AD_ID"]
+      "permissions": [
+        "com.google.android.gms.permission.AD_ID",
+        "android.permission.WAKE_LOCK",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+      ]
     },
     "extra": {
       "eas": {
         "projectId": "61f19f38-1c99-48db-b8a7-d53d0238a8a5"
-      },
-      "grokApiKey": "$EXPO_PUBLIC_VIBECODE_GROK_API_KEY"
+      }
     },
     "plugins": [
       [
@@ -54,6 +65,20 @@
         {
           "androidAppId": "ca-app-pub-8632074296834726~2040607495",
           "iosAppId": "ca-app-pub-8632074296834726~5383909951"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./icon.png",
+          "imageWidth": 280,
+          "resizeMode": "contain",
+          "backgroundColor": "#000000",
+          "dark": {
+            "image": "./icon.png",
+            "imageWidth": 280,
+            "backgroundColor": "#000000"
+          }
         }
       ]
     ],

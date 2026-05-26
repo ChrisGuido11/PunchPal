@@ -1,9 +1,10 @@
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { BoxingLevel, WorkoutPlan, WorkoutHistory, SavedWorkout } from "../types/workout";
+import { BoxingLevel, WorkoutMode, WorkoutPlan, WorkoutHistory, SavedWorkout } from "../types/workout";
+export type { WorkoutMode };
+import type { ProgressionResult, RatingOutcome } from "../lib/progression";
 
-export type WorkoutMode = "classic" | "dynamic";
 
 interface UserState {
   userId: string | null;
@@ -20,6 +21,14 @@ interface UserState {
   workoutMode: WorkoutMode;
   workoutModeMigratedAt: string | null;
 
+  // Progression state (v5 Phase 1+2). Source of truth lives in the store;
+  // Supabase mirrors it via upsertUserStats on every workout completion.
+  nextLevelProgress: number;
+  levelCapStayingSince: string | null;
+  levelCapTooEasyCountSinceStay: number;
+  demotionWindow: RatingOutcome[];
+  recentComboSignatures: string[];
+
   setUserId: (id: string | null) => void;
   setHasCompletedOnboarding: (completed: boolean) => void;
   setBoxingLevel: (level: BoxingLevel) => void;
@@ -31,6 +40,21 @@ interface UserState {
   toggleFavorite: (workoutId: string, workout: SavedWorkout) => void;
   addToRecentlyCompleted: (workout: SavedWorkout) => void;
   setWorkoutMode: (mode: WorkoutMode) => void;
+
+  // Progression setters.
+  setNextLevelProgress: (progress: number) => void;
+  applyProgressionResult: (result: ProgressionResult) => void;
+  pushComboSignatures: (notations: string[]) => void;
+  setLevelCapStaying: (since: string | null, count?: number) => void;
+  advanceLevel: (newLevel: BoxingLevel, carryProgress: number) => void;
+  hardResetProgression: () => void;
+  hydrateProgressionFromDb: (snapshot: {
+    nextLevelProgress?: number;
+    levelCapStayingSince?: string | null;
+    levelCapTooEasyCountSinceStay?: number;
+    demotionWindow?: RatingOutcome[];
+    recentComboSignatures?: string[];
+  }) => void;
 }
 
 const calculateStreak = (workoutHistory: WorkoutHistory[]): { currentStreak: number; longestStreak: number } => {
@@ -54,7 +78,7 @@ const calculateStreak = (workoutHistory: WorkoutHistory[]): { currentStreak: num
       const prevDate = new Date(sortedDates[i - 1]);
       const currDate = new Date(sortedDates[i]);
       const diffDays = Math.floor((prevDate.getTime() - currDate.getTime()) / 86400000);
-      
+
       if (diffDays === 1) {
         currentStreak++;
       } else {
@@ -69,7 +93,7 @@ const calculateStreak = (workoutHistory: WorkoutHistory[]): { currentStreak: num
     const prevDate = new Date(sortedDates[i - 1]);
     const currDate = new Date(sortedDates[i]);
     const diffDays = Math.floor((prevDate.getTime() - currDate.getTime()) / 86400000);
-    
+
     if (diffDays === 1) {
       tempStreak++;
       longestStreak = Math.max(longestStreak, tempStreak);
@@ -98,6 +122,12 @@ export const useUserStore = create<UserState>()(
       unlockedAchievements: [],
       workoutMode: "classic",
       workoutModeMigratedAt: null,
+
+      nextLevelProgress: 0,
+      levelCapStayingSince: null,
+      levelCapTooEasyCountSinceStay: 0,
+      demotionWindow: [],
+      recentComboSignatures: [],
 
       setUserId: (id) => set({ userId: id }),
 
@@ -187,25 +217,109 @@ export const useUserStore = create<UserState>()(
         });
       },
 
-      clearWorkoutHistory: () => set({ 
+      clearWorkoutHistory: () => set({
         workoutHistory: [],
         currentStreak: 0,
         lastWorkoutDate: null,
       }),
+
+      setNextLevelProgress: (progress) =>
+        set({ nextLevelProgress: Math.max(0, Math.min(100, progress)) }),
+
+      // Note: no upper clamp. progression.ts already pins to 100 for advanced
+      // and for staying users — but a non-cap user crossing 100 carries the
+      // overflow (e.g. 105) so handleAdvance can compute the right post-level
+      // starting progress.
+      applyProgressionResult: (result) =>
+        set({
+          nextLevelProgress: Math.max(0, result.newProgress),
+          levelCapTooEasyCountSinceStay: result.newLevelCapTooEasyCount,
+          demotionWindow: result.newDemotionWindow,
+        }),
+
+      pushComboSignatures: (notations) =>
+        set((state) => {
+          // Newest first, then existing, then dedup keeping first occurrence.
+          // Prevents double-pushing the same workout (generate + complete)
+          // from crowding out older entries — the result is a "last 10 unique"
+          // ring buffer with recency bias.
+          const seen = new Set<string>();
+          const merged: string[] = [];
+          for (const n of [...notations, ...state.recentComboSignatures]) {
+            if (seen.has(n)) continue;
+            seen.add(n);
+            merged.push(n);
+          }
+          return { recentComboSignatures: merged.slice(0, 10) };
+        }),
+
+      setLevelCapStaying: (since, count = 0) =>
+        set({
+          levelCapStayingSince: since,
+          levelCapTooEasyCountSinceStay: count,
+        }),
+
+      advanceLevel: (newLevel, carryProgress) =>
+        set({
+          boxingLevel: newLevel,
+          nextLevelProgress: Math.max(0, Math.min(100, carryProgress)),
+          levelCapStayingSince: null,
+          levelCapTooEasyCountSinceStay: 0,
+          demotionWindow: [],
+          currentWorkout: null, // force regeneration at the new tier
+        }),
+
+      hardResetProgression: () =>
+        set({
+          nextLevelProgress: 0,
+          levelCapStayingSince: null,
+          levelCapTooEasyCountSinceStay: 0,
+          demotionWindow: [],
+        }),
+
+      hydrateProgressionFromDb: (snapshot) =>
+        set((state) => ({
+          nextLevelProgress:
+            snapshot.nextLevelProgress ?? state.nextLevelProgress,
+          levelCapStayingSince:
+            snapshot.levelCapStayingSince !== undefined
+              ? snapshot.levelCapStayingSince
+              : state.levelCapStayingSince,
+          levelCapTooEasyCountSinceStay:
+            snapshot.levelCapTooEasyCountSinceStay ??
+            state.levelCapTooEasyCountSinceStay,
+          demotionWindow:
+            snapshot.demotionWindow ?? state.demotionWindow,
+          recentComboSignatures:
+            snapshot.recentComboSignatures ?? state.recentComboSignatures,
+        })),
     }),
     {
       name: "punchpal-user-store",
       storage: createJSONStorage(() => AsyncStorage),
-      version: 1,
+      version: 2,
       migrate: (persistedState: unknown, fromVersion: number) => {
         if (!persistedState || typeof persistedState !== "object") {
           return persistedState as UserState;
         }
         const state = persistedState as Partial<UserState>;
+        // v0 → v1: workoutMode migration (existing user → Classic; new → Dynamic).
         if (fromVersion < 1 && !state.workoutModeMigratedAt) {
           const wasExistingUser = state.hasCompletedOnboarding === true;
           state.workoutMode = wasExistingUser ? "classic" : "dynamic";
           state.workoutModeMigratedAt = new Date().toISOString();
+        }
+        // v1 → v2: workout schema invalidation. Schema v1 currentWorkout has
+        // combos[]; v2 has rounds[]. Null the persisted workout so HomeScreen
+        // regenerates fresh at the new shape on next launch.
+        if (fromVersion < 2) {
+          state.currentWorkout = null;
+          // Initialize new progression fields if missing.
+          if (state.nextLevelProgress === undefined) state.nextLevelProgress = 0;
+          if (state.levelCapStayingSince === undefined) state.levelCapStayingSince = null;
+          if (state.levelCapTooEasyCountSinceStay === undefined) state.levelCapTooEasyCountSinceStay = 0;
+          if (state.demotionWindow === undefined) state.demotionWindow = [];
+          if (state.recentComboSignatures === undefined) state.recentComboSignatures = [];
         }
         return state as UserState;
       },

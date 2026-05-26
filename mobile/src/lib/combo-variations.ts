@@ -1,180 +1,67 @@
 export type ComboNotation = string;
 
-type Token = { n: number; body: boolean };
+export type Tier = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+
+export type DefenseMove =
+  | "slip_left"
+  | "slip_right"
+  | "roll_left"
+  | "roll_right"
+  | "block_left"
+  | "block_right"
+  | "parry_left"
+  | "parry_right";
+
+export type FootworkMove =
+  | "pivot_left"
+  | "pivot_right"
+  | "step_back"
+  | "step_in"
+  | "shuffle_left"
+  | "shuffle_right";
+
+export type FeintMove =
+  | "feint_jab"
+  | "feint_cross"
+  | "feint_hook"
+  | "feint_uppercut"
+  | "feint_high"
+  | "feint_low";
+
+export type Punch = { kind: "punch"; n: 1 | 2 | 3 | 4 | 5 | 6; body: boolean };
+export type Defense = { kind: "defense"; move: DefenseMove };
+export type Footwork = { kind: "footwork"; move: FootworkMove };
+export type Feint = { kind: "feint"; move: FeintMove };
+export type Token = Punch | Defense | Footwork | Feint;
+
+const DEFENSE_MOVES = new Set<string>([
+  "slip_left",
+  "slip_right",
+  "roll_left",
+  "roll_right",
+  "block_left",
+  "block_right",
+  "parry_left",
+  "parry_right",
+]);
+const FOOTWORK_MOVES = new Set<string>([
+  "pivot_left",
+  "pivot_right",
+  "step_back",
+  "step_in",
+  "shuffle_left",
+  "shuffle_right",
+]);
+const FEINT_MOVES = new Set<string>([
+  "feint_jab",
+  "feint_cross",
+  "feint_hook",
+  "feint_uppercut",
+  "feint_high",
+  "feint_low",
+]);
 
 const REAR_HAND = new Set([2, 4, 6]);
-
-function hashString(input: string): number {
-  let h = 2166136261;
-  for (let i = 0; i < input.length; i++) {
-    h ^= input.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  return h >>> 0;
-}
-
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function parseNotation(s: string): Token[] {
-  if (!s) return [];
-  const parts = s.split("-").map((p) => p.trim()).filter(Boolean);
-  const tokens: Token[] = [];
-  for (const part of parts) {
-    const match = /^([1-6])(b?)$/i.exec(part);
-    if (!match) return [];
-    tokens.push({ n: parseInt(match[1], 10), body: match[2].toLowerCase() === "b" });
-  }
-  return tokens;
-}
-
-function formatNotation(tokens: Token[]): string {
-  return tokens.map((t) => `${t.n}${t.body ? "b" : ""}`).join("-");
-}
-
-function isValidCombo(tokens: Token[]): boolean {
-  if (tokens.length === 0) return false;
-  for (const t of tokens) {
-    if (!Number.isInteger(t.n) || t.n < 1 || t.n > 6) return false;
-  }
-  // No 3 identical tokens in a row (compare both n and body).
-  for (let i = 2; i < tokens.length; i++) {
-    const a = tokens[i - 2];
-    const b = tokens[i - 1];
-    const c = tokens[i];
-    if (a.n === b.n && b.n === c.n && a.body === b.body && b.body === c.body) {
-      return false;
-    }
-  }
-  // No 6-in-a-row alternation of the same two distinct tokens.
-  for (let i = 5; i < tokens.length; i++) {
-    const a = tokens[i - 5];
-    const b = tokens[i - 4];
-    if (a.n === b.n && a.body === b.body) continue;
-    let alternates = true;
-    for (let k = 0; k < 6; k++) {
-      const ref = k % 2 === 0 ? a : b;
-      const cur = tokens[i - 5 + k];
-      if (cur.n !== ref.n || cur.body !== ref.body) {
-        alternates = false;
-        break;
-      }
-    }
-    if (alternates) return false;
-  }
-  // Doubled rear punch at positions 0–1 has no setup — unrealistic.
-  if (tokens.length >= 2) {
-    const t0 = tokens[0];
-    const t1 = tokens[1];
-    if (REAR_HAND.has(t0.n) && t0.n === t1.n) return false;
-  }
-  return true;
-}
-
-function sharesPunch(variation: Token[], anchor: Token[]): boolean {
-  const anchorNums = new Set(anchor.map((t) => t.n));
-  return variation.some((t) => anchorNums.has(t.n));
-}
-
-type Strategy = (tokens: Token[], rng: () => number) => Token[] | null;
-
-const dropLast: Strategy = (tokens) => {
-  if (tokens.length <= 1) return null;
-  return tokens.slice(0, -1);
-};
-
-const dropFirst: Strategy = (tokens) => {
-  if (tokens.length <= 1) return null;
-  return tokens.slice(1);
-};
-
-const bodifyLast: Strategy = (tokens) => {
-  if (tokens.length === 0) return null;
-  const last = tokens[tokens.length - 1];
-  if (last.body) return null;
-  return [...tokens.slice(0, -1), { n: last.n, body: true }];
-};
-
-const bodifyMiddle: Strategy = (tokens) => {
-  if (tokens.length < 3) return null;
-  const mid = Math.floor(tokens.length / 2);
-  if (tokens[mid].body) return null;
-  return tokens.map((t, i) => (i === mid ? { n: t.n, body: true } : t));
-};
-
-const prefixJab: Strategy = (tokens) => {
-  if (tokens.length === 0) return null;
-  if (tokens[0].n === 1 && !tokens[0].body) return null;
-  return [{ n: 1, body: false }, ...tokens];
-};
-
-const appendLeadHook: Strategy = (tokens) => {
-  if (tokens.length === 0) return null;
-  const last = tokens[tokens.length - 1];
-  if (last.n === 3 && !last.body) return null;
-  return [...tokens, { n: 3, body: false }];
-};
-
-const appendLeadUppercut: Strategy = (tokens) => {
-  if (tokens.length === 0) return null;
-  const last = tokens[tokens.length - 1];
-  if (last.n === 5 && !last.body) return null;
-  return [...tokens, { n: 5, body: false }];
-};
-
-const bodifyIndexOne: Strategy = (tokens) => {
-  if (tokens.length < 2) return null;
-  if (tokens[1].body) return null;
-  return tokens.map((t, i) => (i === 1 ? { n: t.n, body: true } : t));
-};
-
-const swapLastToBody: Strategy = (tokens, rng) => bodifyLast(tokens, rng);
-
-const STRATEGIES: Strategy[] = [
-  dropLast,
-  dropFirst,
-  bodifyLast,
-  bodifyMiddle,
-  prefixJab,
-  appendLeadHook,
-  appendLeadUppercut,
-  bodifyIndexOne,
-  swapLastToBody,
-];
-
-export function generateVariations(anchor: ComboNotation, count: number): ComboNotation[] {
-  if (count <= 0) return [];
-  const anchorTokens = parseNotation(anchor);
-  if (anchorTokens.length === 0) return [];
-
-  const rng = mulberry32(hashString(anchor));
-  const anchorFmt = formatNotation(anchorTokens);
-  const seen = new Set<string>([anchorFmt]);
-  const out: ComboNotation[] = [];
-
-  for (const strategy of STRATEGIES) {
-    const result = strategy(anchorTokens, rng);
-    if (!result || result.length === 0) continue;
-    if (!isValidCombo(result)) continue;
-    if (!sharesPunch(result, anchorTokens)) continue;
-    const fmt = formatNotation(result);
-    if (seen.has(fmt)) continue;
-    seen.add(fmt);
-    out.push(fmt);
-    if (out.length >= count) break;
-  }
-
-  return out;
-}
 
 const NUMBER_WORDS: Record<number, string> = {
   1: "one",
@@ -185,12 +72,517 @@ const NUMBER_WORDS: Record<number, string> = {
   6: "six",
 };
 
+// === parse ===
+
+function tokenFromString(raw: string): Token | null {
+  const part = raw.trim().toLowerCase();
+  if (!part) return null;
+  const punchMatch = /^([1-6])(b?)$/.exec(part);
+  if (punchMatch) {
+    return {
+      kind: "punch",
+      n: parseInt(punchMatch[1], 10) as 1 | 2 | 3 | 4 | 5 | 6,
+      body: punchMatch[2] === "b",
+    };
+  }
+  if (DEFENSE_MOVES.has(part)) {
+    return { kind: "defense", move: part as DefenseMove };
+  }
+  if (FOOTWORK_MOVES.has(part)) {
+    return { kind: "footwork", move: part as FootworkMove };
+  }
+  if (FEINT_MOVES.has(part)) {
+    return { kind: "feint", move: part as FeintMove };
+  }
+  return null;
+}
+
+// Strict parse. Throws on any grammar or §7.3 constraint violation.
+export function parse(notation: ComboNotation): Token[] {
+  if (typeof notation !== "string" || !notation.trim()) {
+    throw new Error("empty notation");
+  }
+  const parts = notation
+    .split("-")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (parts.length === 0) throw new Error("empty notation");
+  if (parts.length > 8) throw new Error("notation exceeds 8 tokens");
+
+  const tokens: Token[] = [];
+  for (const p of parts) {
+    const tok = tokenFromString(p);
+    if (!tok) throw new Error(`invalid token: ${p}`);
+    tokens.push(tok);
+  }
+
+  let nonPunchCount = 0;
+  let prevWasNonPunch = false;
+  let hasPunch = false;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    const isPunch = t.kind === "punch";
+    if (isPunch) {
+      hasPunch = true;
+    } else {
+      nonPunchCount++;
+      if (prevWasNonPunch) {
+        throw new Error("two consecutive non-punch tokens");
+      }
+    }
+    prevWasNonPunch = !isPunch;
+  }
+  if (!hasPunch) throw new Error("combo must contain at least one punch");
+  if (tokens[tokens.length - 1].kind !== "punch") {
+    throw new Error("combo must end with a punch");
+  }
+  if (nonPunchCount > 3) throw new Error("too many non-punch tokens (max 3)");
+
+  return tokens;
+}
+
+function tryParse(notation: ComboNotation): Token[] | null {
+  try {
+    return parse(notation);
+  } catch {
+    return null;
+  }
+}
+
+// === serialize ===
+
+function tokenToString(t: Token): string {
+  if (t.kind === "punch") return `${t.n}${t.body ? "b" : ""}`;
+  return t.move;
+}
+
+export function serialize(tokens: Token[]): ComboNotation {
+  return tokens.map(tokenToString).join("-");
+}
+
+// === expandForSpeech ===
+
+function tokenToSpeech(t: Token): string {
+  if (t.kind === "punch") {
+    const word = NUMBER_WORDS[t.n];
+    return t.body ? `${word} to the body` : word;
+  }
+  return t.move.replace(/_/g, " ");
+}
+
 export function expandForSpeech(notation: ComboNotation): string {
-  const tokens = parseNotation(notation);
-  if (tokens.length === 0) return "";
-  return tokens
-    .map((t) => (t.body ? `${NUMBER_WORDS[t.n]} to the body` : NUMBER_WORDS[t.n]))
-    .join(", ");
+  const tokens = tryParse(notation);
+  if (!tokens) return "";
+  return tokens.map(tokenToSpeech).join(", ");
+}
+
+// === expandForDisplay ===
+
+function tokenToDisplay(t: Token): string {
+  if (t.kind === "punch") return `${t.n}${t.body ? "b" : ""}`;
+  return t.move.replace(/_/g, " ");
+}
+
+export function expandForDisplay(notation: ComboNotation): string {
+  const tokens = tryParse(notation);
+  if (!tokens) return notation;
+  return tokens.map(tokenToDisplay).join("-");
+}
+
+// === estimateSpeechDuration ===
+
+export function estimateSpeechDuration(
+  expandedSpeech: string,
+  platform: "ios" | "android"
+): number {
+  if (!expandedSpeech) return 1000;
+  const wordCount = expandedSpeech.split(/[\s,]+/).filter(Boolean).length;
+  const msPerWord = platform === "ios" ? 400 : 435;
+  const raw = wordCount * msPerWord + 300;
+  return Math.max(1000, Math.min(8000, raw));
+}
+
+// === hashCombo ===
+
+// FNV-1a 32-bit, hex, first 8 chars. Stable across runs.
+export function hashCombo(notation: ComboNotation): string {
+  const tokens = tryParse(notation);
+  const canonical = tokens ? serialize(tokens) : notation;
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < canonical.length; i++) {
+    h ^= canonical.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0").slice(0, 8);
+}
+
+// === combo metadata helpers ===
+
+export function hasBodyShot(tokens: Token[]): boolean {
+  return tokens.some((t) => t.kind === "punch" && t.body);
+}
+
+export function hasEmbeddedDefense(tokens: Token[]): boolean {
+  return tokens.some((t) => t.kind === "defense");
+}
+
+export function hasEmbeddedFootwork(tokens: Token[]): boolean {
+  return tokens.some((t) => t.kind === "footwork");
+}
+
+export function countPunches(tokens: Token[]): number {
+  return tokens.filter((t) => t.kind === "punch").length;
+}
+
+// === legacy pure-punch validity gates ===
+// These preserve the v4 generator's behavior for back-compat with the existing
+// 17 unit tests: no triple-repeat, no 6-token alternation of two distinct
+// tokens, no doubled rear-hand opening.
+
+function isValidPurePunchPattern(tokens: Token[]): boolean {
+  if (tokens.length === 0) return false;
+  // Triple-repeat (only meaningful for punches; defense/footwork would be
+  // blocked earlier by the consecutive-non-punch rule).
+  for (let i = 2; i < tokens.length; i++) {
+    const a = tokens[i - 2];
+    const b = tokens[i - 1];
+    const c = tokens[i];
+    if (
+      a.kind === "punch" &&
+      b.kind === "punch" &&
+      c.kind === "punch" &&
+      a.n === b.n &&
+      b.n === c.n &&
+      a.body === b.body &&
+      b.body === c.body
+    ) {
+      return false;
+    }
+  }
+  // 6-in-a-row alternation of the same two distinct punches.
+  for (let i = 5; i < tokens.length; i++) {
+    const a = tokens[i - 5];
+    const b = tokens[i - 4];
+    if (a.kind !== "punch" || b.kind !== "punch") continue;
+    if (a.n === b.n && a.body === b.body) continue;
+    let alternates = true;
+    for (let k = 0; k < 6; k++) {
+      const ref = k % 2 === 0 ? a : b;
+      const cur = tokens[i - 5 + k];
+      if (
+        cur.kind !== "punch" ||
+        cur.n !== (ref as Punch).n ||
+        cur.body !== (ref as Punch).body
+      ) {
+        alternates = false;
+        break;
+      }
+    }
+    if (alternates) return false;
+  }
+  // Doubled rear-hand opening (no setup before identical rear shot).
+  if (tokens.length >= 2) {
+    const t0 = tokens[0];
+    const t1 = tokens[1];
+    if (
+      t0.kind === "punch" &&
+      t1.kind === "punch" &&
+      REAR_HAND.has(t0.n) &&
+      t0.n === t1.n
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+// === generateVariations strategies ===
+
+type StrategyResult = Token[] | null;
+type Strategy = (tokens: Token[], tier: Tier | undefined) => StrategyResult;
+
+const punchOnly = (tokens: Token[]): Punch[] =>
+  tokens.filter((t): t is Punch => t.kind === "punch");
+
+const dropLast: Strategy = (tokens) => {
+  if (tokens.length <= 1) return null;
+  // Drop trailing tokens until we land back on a punch (preserves §7.3 ending).
+  const out = tokens.slice(0, -1);
+  while (out.length > 0 && out[out.length - 1].kind !== "punch") {
+    out.pop();
+  }
+  if (out.length === 0) return null;
+  return out;
+};
+
+const dropFirst: Strategy = (tokens) => {
+  if (tokens.length <= 1) return null;
+  // Drop leading tokens until the next token is a punch — combos may start
+  // with a non-punch (e.g. feint), but our dropped-prefix variations should
+  // start clean.
+  const out = tokens.slice(1);
+  while (out.length > 0 && out[0].kind !== "punch") {
+    out.shift();
+  }
+  if (out.length === 0) return null;
+  return out;
+};
+
+const bodifyLast: Strategy = (tokens) => {
+  if (tokens.length === 0) return null;
+  const last = tokens[tokens.length - 1];
+  if (last.kind !== "punch") return null;
+  if (last.body) return null;
+  return [...tokens.slice(0, -1), { kind: "punch", n: last.n, body: true }];
+};
+
+const bodifyMiddle: Strategy = (tokens) => {
+  const punches = punchOnly(tokens);
+  if (punches.length < 3) return null;
+  const midPunchIdx = Math.floor(punches.length / 2);
+  if (punches[midPunchIdx].body) return null;
+  // Find the absolute index of the middle punch in the tokens array.
+  let seen = 0;
+  let absIdx = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].kind === "punch") {
+      if (seen === midPunchIdx) {
+        absIdx = i;
+        break;
+      }
+      seen++;
+    }
+  }
+  if (absIdx < 0) return null;
+  return tokens.map((t, i) =>
+    i === absIdx ? { kind: "punch" as const, n: (t as Punch).n, body: true } : t
+  );
+};
+
+const prefixJab: Strategy = (tokens) => {
+  if (tokens.length === 0) return null;
+  // Find first punch.
+  const firstPunch = tokens.find((t) => t.kind === "punch") as Punch | undefined;
+  if (!firstPunch) return null;
+  if (firstPunch.n === 1 && !firstPunch.body) return null;
+  return [{ kind: "punch" as const, n: 1, body: false }, ...tokens];
+};
+
+const appendLeadHook: Strategy = (tokens) => {
+  if (tokens.length === 0) return null;
+  const last = tokens[tokens.length - 1];
+  if (last.kind === "punch" && last.n === 3 && !last.body) return null;
+  return [...tokens, { kind: "punch" as const, n: 3, body: false }];
+};
+
+const appendLeadUppercut: Strategy = (tokens) => {
+  if (tokens.length === 0) return null;
+  const last = tokens[tokens.length - 1];
+  if (last.kind === "punch" && last.n === 5 && !last.body) return null;
+  return [...tokens, { kind: "punch" as const, n: 5, body: false }];
+};
+
+const bodifyIndexOne: Strategy = (tokens) => {
+  const punches = punchOnly(tokens);
+  if (punches.length < 2) return null;
+  if (punches[1].body) return null;
+  // Find absolute index of second punch.
+  let seen = 0;
+  let absIdx = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].kind === "punch") {
+      if (seen === 1) {
+        absIdx = i;
+        break;
+      }
+      seen++;
+    }
+  }
+  if (absIdx < 0) return null;
+  return tokens.map((t, i) =>
+    i === absIdx ? { kind: "punch" as const, n: (t as Punch).n, body: true } : t
+  );
+};
+
+const insertSlipMid: Strategy = (tokens, tier) => {
+  if (tier === undefined || tier < 4) return null;
+  const punches = punchOnly(tokens);
+  if (punches.length < 2) return null;
+  // Already has a slip? Skip — duplicates pile up otherwise.
+  if (tokens.some((t) => t.kind === "defense" && t.move.startsWith("slip_"))) {
+    return null;
+  }
+  // Insert after the first punch.
+  let absIdx = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].kind === "punch") {
+      absIdx = i;
+      break;
+    }
+  }
+  if (absIdx < 0) return null;
+  // Don't insert before an existing non-punch (would violate consecutive rule).
+  if (
+    absIdx + 1 < tokens.length &&
+    tokens[absIdx + 1].kind !== "punch"
+  ) {
+    return null;
+  }
+  const slip: Defense = { kind: "defense", move: "slip_right" };
+  return [...tokens.slice(0, absIdx + 1), slip, ...tokens.slice(absIdx + 1)];
+};
+
+const insertPivotEnd: Strategy = (tokens, tier) => {
+  if (tier === undefined || tier < 4) return null;
+  const punches = punchOnly(tokens);
+  if (punches.length < 2) return null;
+  if (tokens.some((t) => t.kind === "footwork" && t.move.startsWith("pivot_"))) {
+    return null;
+  }
+  // Insert pivot before the last punch.
+  let lastPunchIdx = -1;
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    if (tokens[i].kind === "punch") {
+      lastPunchIdx = i;
+      break;
+    }
+  }
+  if (lastPunchIdx <= 0) return null;
+  if (tokens[lastPunchIdx - 1].kind !== "punch") return null;
+  const pivot: Footwork = { kind: "footwork", move: "pivot_left" };
+  return [
+    ...tokens.slice(0, lastPunchIdx),
+    pivot,
+    ...tokens.slice(lastPunchIdx),
+  ];
+};
+
+const insertRollMid: Strategy = (tokens, tier) => {
+  if (tier === undefined || tier < 7) return null;
+  const punches = punchOnly(tokens);
+  if (punches.length < 3) return null;
+  if (tokens.some((t) => t.kind === "defense" && t.move.startsWith("roll_"))) {
+    return null;
+  }
+  // Insert roll between the second and third punch (or near the middle).
+  let punchSeen = 0;
+  let absIdx = -1;
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i].kind === "punch") {
+      if (punchSeen === 1) {
+        absIdx = i;
+        break;
+      }
+      punchSeen++;
+    }
+  }
+  if (absIdx < 0) return null;
+  if (absIdx + 1 >= tokens.length) return null;
+  if (tokens[absIdx + 1].kind !== "punch") return null;
+  const roll: Defense = { kind: "defense", move: "roll_left" };
+  return [...tokens.slice(0, absIdx + 1), roll, ...tokens.slice(absIdx + 1)];
+};
+
+const STRATEGIES: Strategy[] = [
+  dropLast,
+  dropFirst,
+  bodifyLast,
+  bodifyMiddle,
+  prefixJab,
+  appendLeadHook,
+  appendLeadUppercut,
+  bodifyIndexOne,
+  insertSlipMid,
+  insertPivotEnd,
+  insertRollMid,
+];
+
+function tierBudget(tier: Tier | undefined): number {
+  if (tier === undefined) return 0; // legacy mode: pure-punch only
+  if (tier <= 3) return 0;
+  if (tier <= 6) return 2;
+  return 3;
+}
+
+function sharesPunch(candidate: Token[], anchor: Token[]): boolean {
+  const anchorNums = new Set(
+    anchor.filter((t): t is Punch => t.kind === "punch").map((t) => t.n)
+  );
+  return candidate
+    .filter((t): t is Punch => t.kind === "punch")
+    .some((t) => anchorNums.has(t.n));
+}
+
+export function generateVariations(
+  anchor: ComboNotation,
+  count: number,
+  tier?: Tier
+): ComboNotation[] {
+  if (count <= 0) return [];
+  const anchorTokens = tryParse(anchor);
+  if (!anchorTokens || anchorTokens.length === 0) return [];
+
+  const budget = tierBudget(tier);
+  const anchorEmbedded = anchorTokens.filter((t) => t.kind !== "punch");
+  const anchorEmbeddedKeys = new Set(anchorEmbedded.map(tokenToString));
+
+  const anchorCanonical = serialize(anchorTokens);
+  const seen = new Set<string>([anchorCanonical]);
+  const out: ComboNotation[] = [];
+
+  for (const strategy of STRATEGIES) {
+    const raw = strategy(anchorTokens, tier);
+    if (!raw || raw.length === 0) continue;
+
+    // Re-parse via serialize → parse so we enforce §7.3 + canonicalize.
+    const serialized = serialize(raw);
+    const validated = tryParse(serialized);
+    if (!validated) continue;
+
+    // Tier budget on non-punch tokens.
+    const nonPunchCount = validated.filter((t) => t.kind !== "punch").length;
+    if (nonPunchCount > budget) continue;
+
+    // Pure-punch heuristic validity (back-compat with the v4 tests).
+    if (!isValidPurePunchPattern(validated)) continue;
+
+    // Variation must share at least one punch with the anchor.
+    if (!sharesPunch(validated, anchorTokens)) continue;
+
+    // When the anchor has embedded moves, preserve at least one.
+    if (anchorEmbedded.length > 0) {
+      const variationKeys = new Set(
+        validated.filter((t) => t.kind !== "punch").map(tokenToString)
+      );
+      let preserved = false;
+      for (const k of anchorEmbeddedKeys) {
+        if (variationKeys.has(k)) {
+          preserved = true;
+          break;
+        }
+      }
+      if (!preserved) continue;
+    }
+
+    const canonical = serialize(validated);
+    if (seen.has(canonical)) continue;
+    seen.add(canonical);
+    out.push(canonical);
+    if (out.length >= count) break;
+  }
+
+  return out;
+}
+
+// === pickDeterministic (kept for back-compat / rest-period tip seeding) ===
+
+function hashString(input: string): number {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 16777619) >>> 0;
+  }
+  return h >>> 0;
 }
 
 export function pickDeterministic<T>(items: readonly T[], seed: string): T {

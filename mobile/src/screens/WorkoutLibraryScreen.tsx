@@ -211,11 +211,11 @@ export default function WorkoutLibraryScreen({ navigation }: Props) {
                       </View>
                       <View className="flex-1 bg-black/30 rounded-lg p-3">
                         <Text className="text-gray-500 text-xs mb-1">Rounds</Text>
-                        <Text className="text-white font-bold">{workout.rounds}</Text>
+                        <Text className="text-white font-bold">{workout.rounds.length}</Text>
                       </View>
                       <View className="flex-1 bg-black/30 rounded-lg p-3">
                         <Text className="text-gray-500 text-xs mb-1">Combos</Text>
-                        <Text className="text-white font-bold">{workout.combos.length}</Text>
+                        <Text className="text-white font-bold">{workout.rounds.length}</Text>
                       </View>
                     </View>
 

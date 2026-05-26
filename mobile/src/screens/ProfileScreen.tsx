@@ -9,6 +9,7 @@ import { useUserStore } from "../state/userStore";
 import { BoxingLevel } from "../types/workout";
 import { supabase, isSupabaseEnabled } from "../lib/supabaseClient";
 import { upsertUserStats } from "../api/database-service";
+import { previousLevel } from "../lib/progression";
 
 type RootStackParamList = {
   Auth: undefined;
@@ -43,6 +44,8 @@ export default function ProfileScreen() {
   const clearWorkoutHistory = useUserStore((s) => s.clearWorkoutHistory);
   const currentStreak = useUserStore((s) => s.currentStreak);
   const longestStreak = useUserStore((s) => s.longestStreak);
+  const demotionWindow = useUserStore((s) => s.demotionWindow);
+  const hardResetProgression = useUserStore((s) => s.hardResetProgression);
 
   const [isEditingLevel, setIsEditingLevel] = useState(false);
   const [userEmail, setUserEmail] = useState<string | null>(null);
@@ -82,39 +85,49 @@ export default function ProfileScreen() {
   const handleLevelChange = async (level: BoxingLevel) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setBoxingLevel(level);
+    // Manual level change is a hard override (v5 §6.7): clear all
+    // rating-driven progression state so the new level starts clean.
+    hardResetProgression();
     setIsEditingLevel(false);
 
-    // Sync boxing level change to Supabase for AI personalization
     if (userId) {
-      console.log('Profile: Updating boxing level to:', level);
-      const totalMinutes = workoutHistory.reduce((sum, w) => sum + (w.duration || 0), 0);
-      const combosCompleted = new Set(workoutHistory.flatMap(w => w.combos || [])).size;
-      const avgAccuracy = workoutHistory.length > 0 
-        ? workoutHistory.reduce((sum, w) => sum + (w.accuracy || 0), 0) / workoutHistory.length 
-        : 0;
-      
-      const thresholds = { beginner: 20, intermediate: 50, advanced: 100 };
-      const threshold = thresholds[level];
-      const progress = Math.min(Math.round((workoutHistory.length / threshold) * 100), 100);
+      const totalMinutes = workoutHistory.reduce(
+        (sum, w) => sum + (w.duration || 0),
+        0
+      );
+      const combosCompleted = new Set(
+        workoutHistory.flatMap((w) => w.combos || [])
+      ).size;
 
-      const result = await upsertUserStats(userId, {
+      await upsertUserStats(userId, {
         userId,
         totalWorkouts: workoutHistory.length,
         totalMinutes,
         currentLevel: level,
-        nextLevelProgress: progress,
+        nextLevelProgress: 0,
         combosLearned: combosCompleted,
         currentStreak,
         longestStreak,
-        avgAccuracy: Math.round(avgAccuracy),
-        lastWorkoutDate: workoutHistory.length > 0 
-          ? new Date(workoutHistory[workoutHistory.length - 1].completedAt).toISOString() 
-          : null,
+        lastWorkoutDate:
+          workoutHistory.length > 0
+            ? new Date(workoutHistory[0].completedAt).toISOString()
+            : null,
+        levelCapStayingSince: null,
+        levelCapTooEasyCountSinceStay: 0,
+        demotionWindow: [],
       });
-      console.log('Profile: Level update result:', result ? 'Success' : 'Failed');
-    } else {
-      console.log('Profile: No userId found, skipping Supabase sync');
     }
+  };
+
+  const tooHardInWindow = demotionWindow.filter((o) => o === "too_hard").length;
+  const showDemotionHint =
+    tooHardInWindow >= 3 && boxingLevel !== null && boxingLevel !== "beginner";
+  const demoteTarget = boxingLevel ? previousLevel(boxingLevel) : null;
+
+  const handleDemoteTap = async () => {
+    if (!demoteTarget) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await handleLevelChange(demoteTarget);
   };
 
   const handleClearHistory = () => {
@@ -408,6 +421,39 @@ export default function ProfileScreen() {
             )}
           </View>
         </View>
+
+        {/* Demotion hint — surfaces when recent ratings suggest the current
+            level is too hard. Hint only; never auto-applied. */}
+        {showDemotionHint && demoteTarget ? (
+          <View className="px-6 mb-6">
+            <View className="bg-boxing-cardBg border-2 border-boxing-gold rounded-2xl p-5">
+              <Text className="text-boxing-gold text-xs font-bold uppercase tracking-widest mb-2">
+                Difficulty Check
+              </Text>
+              <Text className="text-white text-base mb-4">
+                Based on your recent ratings, you might prefer {demoteTarget}.
+              </Text>
+              <Pressable
+                onPress={handleDemoteTap}
+                className="active:opacity-90"
+                accessibilityRole="button"
+                accessibilityLabel={`Drop back to ${demoteTarget}`}
+              >
+                <View
+                  style={{
+                    backgroundColor: "#D4AF37",
+                    borderRadius: 12,
+                    paddingVertical: 14,
+                  }}
+                >
+                  <Text className="text-black text-center text-base font-black uppercase tracking-widest">
+                    Drop back to {demoteTarget}
+                  </Text>
+                </View>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
 
         {/* Streaks Section */}
         <View className="px-6 mb-6">

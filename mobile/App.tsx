@@ -1,8 +1,24 @@
+import { useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { NavigationContainer } from "@react-navigation/native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import * as Updates from "expo-updates";
+import * as SplashScreen from "expo-splash-screen";
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import RootNavigator from "./src/navigation/RootNavigator";
+
+SplashScreen.preventAutoHideAsync().catch(() => {});
+SplashScreen.setOptions({ duration: 400, fade: true });
+
+Audio.setAudioModeAsync({
+  staysActiveInBackground: true,
+  playsInSilentModeIOS: true,
+  shouldDuckAndroid: true,
+  interruptionModeIOS: InterruptionModeIOS.DuckOthers,
+  interruptionModeAndroid: InterruptionModeAndroid.DuckOthers,
+  allowsRecordingIOS: false,
+}).catch(() => {});
 
 /*
 IMPORTANT NOTICE: DO NOT REMOVE
@@ -26,10 +42,30 @@ const openai_api_key = Constants.expoConfig.extra.apikey;
 */
 
 export default function App() {
+  // Explicit OTA check on cold launch. Updates.isEnabled is false in Expo Go
+  // and dev client, so this only fires on preview / production builds. Fetches
+  // silently and reloads — user sees the new bundle on next cold open.
+  useEffect(() => {
+    if (!Updates.isEnabled) return;
+    (async () => {
+      try {
+        const result = await Updates.checkForUpdateAsync();
+        if (result.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          await Updates.reloadAsync();
+        }
+      } catch {
+        // Silent fail — app continues on the current bundle.
+      }
+    })();
+  }, []);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <NavigationContainer>
+        <NavigationContainer
+          onReady={() => SplashScreen.hideAsync().catch(() => {})}
+        >
           <RootNavigator />
           <StatusBar style="light" />
         </NavigationContainer>
