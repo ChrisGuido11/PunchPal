@@ -45,6 +45,11 @@ export interface WorkoutSession {
   signalAtLevelCap?: boolean;
   signalFeatureStruggles?: string[];
   signalFeatureSuccesses?: string[];
+  // Skip Combo telemetry (migration 007). How many times the user tapped
+  // the in-round Skip Combo button. Per-combo signal also fires through
+  // punchpal_record_combo_rating with rating=3 (too_hard) so the struggle
+  // list updates immediately; this column gives us session-level analytics.
+  signalSkipCount?: number;
 }
 
 export interface UserStats {
@@ -223,6 +228,7 @@ export async function logWorkoutSession(
       signal_at_level_cap: session.signalAtLevelCap,
       signal_feature_struggles: session.signalFeatureStruggles,
       signal_feature_successes: session.signalFeatureSuccesses,
+      signal_skip_count: session.signalSkipCount,
     };
 
     const { data, error } = await supabase

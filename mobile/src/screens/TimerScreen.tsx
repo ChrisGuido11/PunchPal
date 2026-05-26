@@ -212,6 +212,9 @@ function TimerScreen({ navigation }: Props) {
   const classicNextReminderIdxRef = useRef<number>(0);
   // Fires once per workout: heads-up that the info icon shows the description.
   const infoHintPlayedRef = useRef<boolean>(false);
+  // Per-workout Skip Combo press count (Phase 3). Passed to logWorkoutSession
+  // so we can correlate skip rate with workout difficulty + adaptive signals.
+  const skipCountRef = useRef<number>(0);
 
   // Dynamic-mode hybrid scheduler state.
   const dynamicComboListRef = useRef<{ notation: string; speech: string }[]>(
@@ -606,6 +609,55 @@ function TimerScreen({ navigation }: Props) {
       speak,
     ]
   );
+
+  // === Skip Combo (Phase 3) ===
+  //
+  // In dynamic mode, lets the user dismiss the current combo if it isn't
+  // landing. Records the dismissed combo as TOO HARD (rating=3) via the
+  // existing per-combo RPC so it feeds the same struggle-list pipeline that
+  // future workouts read from — over a few uses, the system will stop
+  // generating combos the user keeps skipping. Also increments a per-session
+  // counter for analytics. Classic-mode rounds have a single anchor and
+  // already have the round-skip media control, so this button only shows
+  // in dynamic mode.
+  const handleSkipCombo = useCallback(() => {
+    if (workoutMode !== "dynamic") return;
+    if (!isRunning || isPaused || phase !== "work") return;
+    const combos = dynamicComboListRef.current;
+    if (combos.length === 0) return;
+    const idx = dynamicNextIdxRef.current;
+    const current = combos[idx % combos.length];
+    if (!current) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    skipCountRef.current += 1;
+
+    if (userId) {
+      recordComboProgressForSession(
+        userId,
+        [{ notation: current.notation, name: currentWorkout?.name }],
+        3
+      ).catch(() => {});
+    }
+
+    // Cut the current TTS + cancel the pending advance timer, then fire the
+    // next variation immediately. The wall-clock end-of-round bells were
+    // scheduled separately and remain unaffected.
+    Speech.stop();
+    if (dynamicPrimaryHandleRef.current) {
+      clearTimeout(dynamicPrimaryHandleRef.current);
+      dynamicPrimaryHandleRef.current = null;
+    }
+    fireDynamicCombo(idx + 1);
+  }, [
+    currentWorkout,
+    fireDynamicCombo,
+    isPaused,
+    isRunning,
+    phase,
+    userId,
+    workoutMode,
+  ]);
 
   // === Round-start orchestration ===
 
@@ -1172,6 +1224,7 @@ function TimerScreen({ navigation }: Props) {
           signalAtLevelCap: tel?.atLevelCap,
           signalFeatureStruggles: tel?.featureStruggles,
           signalFeatureSuccesses: tel?.featureSuccesses,
+          signalSkipCount: skipCountRef.current,
         }).catch(() => {});
 
         // Adaptive-learning telemetry: only on real ratings (not early-exit).
@@ -1238,6 +1291,7 @@ function TimerScreen({ navigation }: Props) {
         signalAtLevelCap: tel?.atLevelCap,
         signalFeatureStruggles: tel?.featureStruggles,
         signalFeatureSuccesses: tel?.featureSuccesses,
+        signalSkipCount: skipCountRef.current,
       }).catch(() => {});
     }
 
@@ -1510,6 +1564,32 @@ function TimerScreen({ navigation }: Props) {
                 {/* Description hidden — accessible via (i) icon in the header */}
               </Animated.View>
             )}
+            {workoutMode === "dynamic" &&
+            phase === "work" &&
+            isRunning &&
+            !isPaused ? (
+              <Pressable
+                onPress={handleSkipCombo}
+                hitSlop={12}
+                className="active:opacity-60 mt-5"
+                accessibilityRole="button"
+                accessibilityLabel="Skip this combo — records it as too hard"
+              >
+                <View
+                  className="flex-row items-center"
+                  style={{ gap: 6 }}
+                >
+                  <Ionicons
+                    name="play-skip-forward-outline"
+                    size={14}
+                    color="#9CA3AF"
+                  />
+                  <Text className="text-gray-400 text-xs uppercase tracking-widest font-semibold">
+                    Skip combo
+                  </Text>
+                </View>
+              </Pressable>
+            ) : null}
           </View>
         </View>
 
