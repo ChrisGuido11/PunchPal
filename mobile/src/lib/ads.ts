@@ -17,11 +17,11 @@ import type {
 //
 // MUST be set to `false` before submitting the final build to the App Store.
 // ============================================================
-const FORCE_TEST_ADS = true;
+const FORCE_TEST_ADS = false;
 
 // Optional: paste specific device IDs here if you ever capture them
 // (via Xcode console or AdMob diagnostic logs). Not required when
-// FORCE_TEST_ADS is true.
+// FORCE_TEST_ADS is false — real ads in production builds.
 const TEST_DEVICE_IDS: string[] = [];
 
 // Dynamically load the native ads module. In Expo Go (no custom dev client),

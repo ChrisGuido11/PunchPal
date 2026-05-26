@@ -3,7 +3,7 @@
     "name": "PunchPal",
     "slug": "punchpal-ai-coach",
     "scheme": "punchpal",
-    "version": "1.1.0",
+    "version": "1.1.1",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
