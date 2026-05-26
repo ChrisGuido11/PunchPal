@@ -39,9 +39,9 @@ function MainTabNavigator() {
           backgroundColor: "#000000",
           borderTopColor: "#DC2626",
           borderTopWidth: 2,
-          height: 60 + insets.bottom,
+          height: 48 + insets.bottom,
           paddingBottom: insets.bottom,
-          paddingTop: 8,
+          paddingTop: 4,
         },
         tabBarActiveTintColor: "#DC2626",
         tabBarInactiveTintColor: "#6B7280",
@@ -60,7 +60,7 @@ function MainTabNavigator() {
         options={{
           tabBarLabel: () => null,
           tabBarIcon: ({ color }) => (
-            <Ionicons name="home" size={32} color={color} />
+            <Ionicons name="home" size={28} color={color} />
           ),
         }}
       />
@@ -70,7 +70,7 @@ function MainTabNavigator() {
         options={{
           tabBarLabel: () => null,
           tabBarIcon: ({ color }) => (
-            <Ionicons name="person-circle" size={32} color={color} />
+            <Ionicons name="person-circle" size={28} color={color} />
           ),
         }}
       />

@@ -12,7 +12,7 @@ export default function StreakCard({
   longestStreak,
 }: StreakCardProps) {
   return (
-    <View className="mx-6 mb-3">
+    <View className="mx-6 mb-2">
       <View className="relative">
         <View
           style={{
@@ -36,47 +36,47 @@ export default function StreakCard({
           />
         </View>
 
-        <View className="bg-boxing-dark rounded-2xl border border-white/10 px-4 py-3">
+        <View className="bg-boxing-dark rounded-2xl border border-white/10 px-4 py-2">
           <View className="flex-row items-center justify-around">
             <View className="items-center">
-              <Text className="text-2xl font-black text-boxing-red">
+              <Text className="text-xl font-black text-boxing-red">
                 {currentStreak}
               </Text>
-              <Text className="text-[10px] text-boxing-gold font-bold uppercase tracking-wide mt-0.5">
+              <Text className="text-[10px] text-boxing-gold font-bold uppercase tracking-wide">
                 CURRENT
               </Text>
             </View>
 
             <View className="items-center">
-              <Text className="text-2xl font-black text-boxing-gold">
+              <Text className="text-xl font-black text-boxing-gold">
                 {longestStreak}
               </Text>
-              <Text className="text-[10px] text-white font-bold uppercase tracking-wide mt-0.5">
+              <Text className="text-[10px] text-white font-bold uppercase tracking-wide">
                 LONGEST
               </Text>
             </View>
           </View>
 
           {currentStreak === 0 && (
-            <Text className="text-center text-white/50 mt-2 text-[11px]">
+            <Text className="text-center text-white/50 mt-1 text-[10px]">
               Complete a workout to start your streak!
             </Text>
           )}
 
           {currentStreak > 0 && currentStreak < 7 && (
-            <Text className="text-center text-white/50 mt-2 text-[11px]">
+            <Text className="text-center text-white/50 mt-1 text-[10px]">
               {7 - currentStreak} more day{7 - currentStreak !== 1 ? "s" : ""} to reach 1 week!
             </Text>
           )}
 
           {currentStreak >= 7 && currentStreak < 30 && (
-            <Text className="text-center text-white/50 mt-2 text-[11px]">
+            <Text className="text-center text-white/50 mt-1 text-[10px]">
               {30 - currentStreak} more day{30 - currentStreak !== 1 ? "s" : ""} to reach 30 days!
             </Text>
           )}
 
           {currentStreak >= 30 && (
-            <Text className="text-center text-boxing-gold mt-2 text-[11px] font-bold">
+            <Text className="text-center text-boxing-gold mt-1 text-[10px] font-bold">
               🏆 LEGENDARY STREAK! 🏆
             </Text>
           )}

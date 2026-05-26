@@ -1,23 +1,55 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { View, Text, Pressable, ScrollView, Linking, Platform } from "react-native";
+import {
+  AppState,
+  AppStateStatus,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  Text,
+  View,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
+import { Ionicons } from "@expo/vector-icons";
 import { Audio } from "expo-av";
+import { useKeepAwake } from "expo-keep-awake";
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSequence,
+  withTiming,
+} from "react-native-reanimated";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 
 import { useUserStore } from "../state/userStore";
-import { BoxingLevel } from "../types/workout";
+import { BoxingLevel, Round } from "../types/workout";
 import { checkAchievements } from "../utils/achievements";
-import { logWorkoutSession } from "../api/database-service";
+import {
+  logWorkoutSession,
+  recordComboProgressForSession,
+  upsertUserStats,
+} from "../api/database-service";
 import { INTERSTITIAL_AD_UNIT_ID, useInterstitial } from "../lib/ads";
 import BannerAdView from "../components/BannerAdView";
+import LevelUpModal from "../components/LevelUpModal";
 import {
+  estimateSpeechDuration,
+  expandForDisplay,
   expandForSpeech,
   generateVariations,
-  pickDeterministic,
 } from "../lib/combo-variations";
+import {
+  computeProgression,
+  type RatingOutcome,
+} from "../lib/progression";
+import {
+  startWorkoutBackgroundTask,
+  stopWorkoutBackgroundTask,
+  updateWorkoutBackgroundTask,
+} from "../lib/background-task";
 
 type RootStackParamList = {
   Splash: undefined;
@@ -28,14 +60,80 @@ type RootStackParamList = {
 
 type Props = NativeStackScreenProps<RootStackParamList, "Timer">;
 
-
-
 const WORK_DURATION = 180; // 3 minutes
 const REST_DURATION = 60; // 1 minute
+const END_OF_ROUND_WARN_MS = 170_000;
+const END_OF_ROUND_END_MS = 180_000;
+const LATEST_DYNAMIC_FIRE_MS = 165_000;
+const REMINDER_WINDOW_START_MS = 30_000;
+const REMINDER_WINDOW_END_MS = 160_000;
+const DESCRIPTION_OFFSET_MS = 5_000;
+const ANCHOR_REANNOUNCE_PRIMARY_MS = 90_000;
+const ANCHOR_REANNOUNCE_SECONDARY_MS = 153_000;
+// Post-speech silence before next combo fires. Reduced from 4000ms after user
+// feedback that 4s felt sluggish — actual silence is `DYNAMIC_GAP_MS - speech
+// overrun` which is ~1.5–2s effective at 2500ms (real Siri speech is slower
+// than our estimator's 400ms/word baseline).
+const DYNAMIC_GAP_MS = 2_500;
+const MAX_DYNAMIC_CALLS = 40;
 
 type Phase = "work" | "rest";
 
+function tierFromLevelProgress(
+  level: BoxingLevel | null,
+  progress: number
+): 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 {
+  const lvl: BoxingLevel = level ?? "beginner";
+  const clamped = Math.max(0, Math.min(100, progress));
+  const sub = clamped <= 33 ? 0 : clamped <= 66 ? 1 : 2;
+  const base = lvl === "beginner" ? 1 : lvl === "intermediate" ? 4 : 7;
+  return (base + sub) as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+}
+
+function ratingToOutcome(rating: 1 | 2 | 3): RatingOutcome {
+  if (rating === 1) return "too_easy";
+  if (rating === 2) return "just_right";
+  return "too_hard";
+}
+
+// Force a balanced two-line wrap by exposing exactly one break opportunity at
+// the midpoint of the string. Hard \n breaks adjustsFontSizeToFit, so instead
+// we leave only one breakable character: convert other spaces to U+00A0
+// (non-breaking space), other hyphens to U+2011 (non-breaking hyphen — same
+// visual as a regular hyphen), and insert U+200B (zero-width space) after the
+// chosen break point. RN's wrap then has exactly one option, and autoshrink
+// computes fit normally against balanced lines.
+function balancedTwoLineWrap(s: string): string {
+  if (s.length <= 22) return s;
+  const mid = Math.floor(s.length / 2);
+  let bestIdx = -1;
+  let bestDist = Infinity;
+  for (let i = 1; i < s.length - 1; i++) {
+    const ch = s[i];
+    if (ch !== "-" && ch !== " ") continue;
+    const dist = Math.abs(i - mid);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestIdx = i;
+    }
+  }
+  if (bestIdx < 0) return s;
+  let out = "";
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === " ") {
+      out += i === bestIdx ? " " : "\u00A0";
+    } else if (ch === "-") {
+      out += i === bestIdx ? "-\u200B" : "\u2011";
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
 function TimerScreen({ navigation }: Props) {
+  useKeepAwake();
   const insets = useSafeAreaInsets();
   const currentWorkout = useUserStore((s) => s.currentWorkout);
   const addWorkoutToHistory = useUserStore((s) => s.addWorkoutToHistory);
@@ -46,40 +144,101 @@ function TimerScreen({ navigation }: Props) {
   const unlockAchievement = useUserStore((s) => s.unlockAchievement);
   const workoutMode = useUserStore((s) => s.workoutMode);
   const boxingLevel = useUserStore((s) => s.boxingLevel);
+  const userId = useUserStore((s) => s.userId);
+  const nextLevelProgress = useUserStore((s) => s.nextLevelProgress);
+  const levelCapStayingSince = useUserStore((s) => s.levelCapStayingSince);
+  const levelCapTooEasyCountSinceStay = useUserStore(
+    (s) => s.levelCapTooEasyCountSinceStay
+  );
+  const demotionWindow = useUserStore((s) => s.demotionWindow);
+  const applyProgressionResult = useUserStore(
+    (s) => s.applyProgressionResult
+  );
+  const pushComboSignatures = useUserStore((s) => s.pushComboSignatures);
+  const advanceLevel = useUserStore((s) => s.advanceLevel);
+  const setLevelCapStaying = useUserStore((s) => s.setLevelCapStaying);
 
   const [currentRound, setCurrentRound] = useState(1);
   const [phase, setPhase] = useState<Phase>("work");
   const [timeRemaining, setTimeRemaining] = useState(WORK_DURATION);
   const [restRemaining, setRestRemaining] = useState(REST_DURATION);
-  const [currentComboIndex, setCurrentComboIndex] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [showRating, setShowRating] = useState(false);
   const [finishedAt, setFinishedAt] = useState<Date | null>(null);
-  const [dynamicComboNotation, setDynamicComboNotation] = useState<string | null>(null);
-  const userId = useUserStore((s) => s.userId);
+  const [dynamicNotation, setDynamicNotation] = useState<string | null>(null);
+  const [showLevelUp, setShowLevelUp] = useState(false);
+  const [showDescription, setShowDescription] = useState(false);
+  const [pendingAdvanceLevel, setPendingAdvanceLevel] = useState<
+    "intermediate" | "advanced" | null
+  >(null);
+  const [totalElapsedSec, setTotalElapsedSec] = useState(0);
 
-  const comboCalloutTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
-  const lastComboKeyRef = useRef<string | null>(null);
+  const totalRounds = currentWorkout?.rounds.length ?? 0;
+  const rounds = currentWorkout?.rounds ?? [];
+  const currentRoundData: Round | undefined = useMemo(
+    () => rounds[currentRound - 1],
+    [rounds, currentRound]
+  );
+  const anchor = currentRoundData?.anchorCombo;
+
+  // Workout-wide timing (independent of per-round refs below). Set on first
+  // play; paused-time accumulates across all pauses so the displayed total is
+  // active workout time, not wall-clock since start.
+  const workoutStartedAtRef = useRef<number | null>(null);
+  const workoutPausedAtRef = useRef<number | null>(null);
+  const workoutPausedAccumMsRef = useRef<number>(0);
+
+  // Scheduling refs (wall-clock-anchored).
+  const roundStartedAtRef = useRef<number | null>(null);
+  const pausedAtRef = useRef<number | null>(null);
+  const pausedAccumMsRef = useRef<number>(0);
+  // Rest-phase wall-clock anchor (parallel to work above).
+  const restStartedAtRef = useRef<number | null>(null);
+  const restPausedAtRef = useRef<number | null>(null);
+  const restPausedAccumMsRef = useRef<number>(0);
+  const scheduleTimeoutsRef = useRef<NodeJS.Timeout[]>([]);
+  const isRunningRef = useRef<boolean>(false);
+  const isPausedRef = useRef<boolean>(false);
   const lastBeepSecondRef = useRef<number | null>(null);
   const lastMinuteCalloutRef = useRef<number | null>(null);
   const lastRestBeepSecondRef = useRef<number | null>(null);
   const restSpokenRef = useRef<number | null>(null);
   const beepSoundRef = useRef<Audio.Sound | null>(null);
   const isEarlyExitRef = useRef(false);
-  // Dynamic-mode scheduling refs. All times are wall-clock ms.
-  const roundStartedAtRef = useRef<number | null>(null);
-  const pausedAtRef = useRef<number | null>(null);
-  const pausedAccumMsRef = useRef<number>(0);
-  const dynamicScheduleRef = useRef<{ notation: string; offsetMs: number }[]>([]);
-  const dynamicFillerScheduleRef = useRef<{ speech: string; offsetMs: number }[]>([]);
-  const dynamicNextIndexRef = useRef<number>(0);
-  const dynamicNextFillerIndexRef = useRef<number>(0);
-  const isRunningRef = useRef<boolean>(false);
-  const isPausedRef = useRef<boolean>(false);
+  const lastScheduledRoundKeyRef = useRef<string | null>(null);
+
+  // Classic-mode reminder tracking.
+  const classicNextReminderIdxRef = useRef<number>(0);
+  // Fires once per workout: heads-up that the info icon shows the description.
+  const infoHintPlayedRef = useRef<boolean>(false);
+
+  // Dynamic-mode hybrid scheduler state.
+  const dynamicComboListRef = useRef<{ notation: string; speech: string }[]>(
+    []
+  );
+  const dynamicNextIdxRef = useRef<number>(0);
+  const dynamicPrimaryHandleRef = useRef<NodeJS.Timeout | null>(null);
+  const dynamicPrimaryTargetTimeRef = useRef<number | null>(null);
+  const dynamicPrimaryFiredRef = useRef<boolean>(false);
+
   const [coachVoiceId, setCoachVoiceId] = useState<string | undefined>(undefined);
 
   const postWorkoutAd = useInterstitial(INTERSTITIAL_AD_UNIT_ID);
+
+  // Combo-card pulse animation.
+  const cardScale = useSharedValue(1);
+  const cardStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: cardScale.value }],
+  }));
+  const pulseCard = useCallback(() => {
+    cardScale.value = withSequence(
+      withTiming(1.03, { duration: 150 }),
+      withTiming(1, { duration: 150 })
+    );
+  }, [cardScale]);
+
+  // === Voice selection (preserved from prior implementation) ===
 
   useEffect(() => {
     let cancelled = false;
@@ -95,11 +254,6 @@ function TimerScreen({ navigation }: Props) {
           const googleTts = enUs.filter((v) =>
             v.identifier?.toLowerCase().startsWith("com.google.android.tts:"),
           );
-          // Google's "Network" voices (identifier ends with `-network`) are
-          // neural cloud-rendered and sound dramatically better than local
-          // synthesis. They aren't flagged as Enhanced in expo-speech so they
-          // get skipped by a quality-only filter. PunchPal is online-only so
-          // requiring network for TTS is fine.
           const networkGoogle = googleTts.filter((v) =>
             v.identifier.toLowerCase().includes("-network"),
           );
@@ -116,8 +270,6 @@ function TimerScreen({ navigation }: Props) {
             nonDefault[0]?.identifier ??
             enUs[0]?.identifier;
         } else {
-          // iOS — pick the generic Siri male ("Voice 1") if available, else
-          // fall back through the named premium/enhanced male voice list.
           const pickSiriMale = (pool: Speech.Voice[]) =>
             pool.find((v) => {
               const id = v.identifier.toLowerCase();
@@ -148,186 +300,14 @@ function TimerScreen({ navigation }: Props) {
         setCoachVoiceId(picked);
       })
       .catch(() => {
-        // Falls back to platform default voice — same as before.
+        // Falls back to platform default voice.
       });
     return () => {
       cancelled = true;
     };
   }, []);
 
-  const totalRounds = currentWorkout?.rounds ?? 1;
-  const combos = currentWorkout?.combos ?? [];
-
-  const combo = useMemo(() => combos[currentComboIndex], [combos, currentComboIndex]);
-
-  const formatNotationForSpeech = (notation: string): string =>
-    notation
-      .split("-")
-      .map((part) => {
-        const trimmed = part.trim();
-        if (/^\d+b$/i.test(trimmed)) {
-          return `${trimmed.slice(0, -1)} to the body`;
-        }
-        return trimmed;
-      })
-      .join(", ");
-
-  const speak = useCallback(
-    (text: string) => {
-      Speech.speak(text, {
-        language: "en-US",
-        voice: coachVoiceId,
-        // Android TTS voices have flatter prosody than iOS Siri voices —
-        // slowing them a notch noticeably reduces the robotic feel.
-        rate: Platform.OS === "android" ? 0.88 : 0.95,
-        pitch: 1,
-      });
-    },
-    [coachVoiceId]
-  );
-
-  const clearComboCallouts = useCallback(() => {
-    comboCalloutTimeoutsRef.current.forEach((t) => clearTimeout(t));
-    comboCalloutTimeoutsRef.current = [];
-  }, []);
-
-  const scheduleComboCallouts = useCallback(
-    (comboName?: string, comboNotation?: string, comboDescription?: string) => {
-      if (!comboName || !comboNotation) return;
-
-      clearComboCallouts();
-      lastBeepSecondRef.current = null;
-
-      const numbers = formatNotationForSpeech(comboNotation);
-      const description = comboDescription?.trim();
-
-      // Initial burst — Expo Speech queues utterances, so these play back-to-back.
-      speak(comboName);
-      speak(numbers);
-      if (description) speak(description);
-
-      // After the intro plays, repeat the notation periodically through the round.
-      const t1 = setTimeout(() => speak(numbers), 25000);
-      const t2 = setTimeout(() => speak(numbers), 40000);
-      const t3 = setTimeout(() => speak("keep going"), 55000);
-
-      comboCalloutTimeoutsRef.current = [t1, t2, t3];
-    },
-    [clearComboCallouts, speak]
-  );
-
-  const cadenceFor = (level: BoxingLevel | null): number => {
-    if (level === "advanced") return 18;
-    if (level === "beginner") return 45;
-    return 28;
-  };
-
-  const TACTICAL_FILLERS = [
-    "reset, circle out",
-    "keep your guard up",
-    "stay loose",
-  ] as const;
-  const MOTIVATIONAL_FILLERS = [
-    "stay sharp",
-    "halfway, push",
-    "finish strong",
-  ] as const;
-
-  const scheduleDynamicFromIndex = useCallback(
-    (comboStartIdx: number, fillerStartIdx: number) => {
-      const startedAt = roundStartedAtRef.current;
-      if (startedAt == null) return;
-
-      const now = Date.now();
-      const pausedAccum = pausedAccumMsRef.current;
-
-      const scheduleEvent = (offsetMs: number, fn: () => void) => {
-        const target = startedAt + offsetMs + pausedAccum;
-        const delay = Math.max(0, target - now);
-        const id = setTimeout(() => {
-          if (!isRunningRef.current || isPausedRef.current) return;
-          fn();
-        }, delay);
-        comboCalloutTimeoutsRef.current.push(id as unknown as NodeJS.Timeout);
-      };
-
-      const combos = dynamicScheduleRef.current;
-      const fillers = dynamicFillerScheduleRef.current;
-
-      for (let i = comboStartIdx; i < combos.length; i++) {
-        const { notation, offsetMs } = combos[i];
-        scheduleEvent(offsetMs, () => {
-          dynamicNextIndexRef.current = i + 1;
-          setDynamicComboNotation(notation);
-          speak(expandForSpeech(notation));
-        });
-      }
-
-      for (let j = fillerStartIdx; j < fillers.length; j++) {
-        const { speech, offsetMs } = fillers[j];
-        scheduleEvent(offsetMs, () => {
-          dynamicNextFillerIndexRef.current = j + 1;
-          speak(speech);
-        });
-      }
-    },
-    [speak]
-  );
-
-  const scheduleDynamicCallouts = useCallback(
-    (anchorNotation: string) => {
-      if (!anchorNotation) return;
-
-      clearComboCallouts();
-      Speech.stop();
-      lastBeepSecondRef.current = null;
-
-      const cadence = cadenceFor(boxingLevel);
-      // Anchor fires at t=4s. We want the last combo to finish before the 10s
-      // end-of-round buffer at t=170s. Allowing ~5s per utterance, the latest
-      // safe start is t=4 + N*cadence ≤ 165, so N ≤ floor(161/cadence).
-      const numCalls = Math.min(9, Math.floor(161 / cadence) + 1);
-      const variations = generateVariations(anchorNotation, numCalls - 1);
-      const combosList = [anchorNotation, ...variations];
-
-      const startedAt = Date.now();
-      roundStartedAtRef.current = startedAt;
-      pausedAccumMsRef.current = 0;
-      pausedAtRef.current = null;
-      dynamicNextIndexRef.current = 0;
-      dynamicNextFillerIndexRef.current = 0;
-
-      const schedule = combosList.map((notation, i) => ({
-        notation,
-        offsetMs: (i * cadence + 4) * 1000,
-      }));
-      dynamicScheduleRef.current = schedule;
-
-      // Tactical filler in the first gap (between anchor and variation 1),
-      // motivational at ~120s. Both queue via Speech.speak — if a combo is
-      // still being uttered when a filler fires, Expo Speech queues them.
-      const tacticalOffsetMs = (Math.floor(cadence * 0.6) + 4) * 1000;
-      const motivationalOffsetMs = 122 * 1000;
-      const fillerSchedule = [
-        {
-          speech: pickDeterministic(TACTICAL_FILLERS, `tactical-${anchorNotation}`),
-          offsetMs: tacticalOffsetMs,
-        },
-        {
-          speech: pickDeterministic(MOTIVATIONAL_FILLERS, `motivational-${anchorNotation}`),
-          offsetMs: motivationalOffsetMs,
-        },
-      ];
-      dynamicFillerScheduleRef.current = fillerSchedule;
-
-      // Show the anchor immediately on the card so the t=4s utterance lines up
-      // with the visual.
-      setDynamicComboNotation(anchorNotation);
-
-      scheduleDynamicFromIndex(0, 0);
-    },
-    [boxingLevel, clearComboCallouts, scheduleDynamicFromIndex]
-  );
+  // === Beep sound ===
 
   const playBeep = useCallback(async () => {
     try {
@@ -360,14 +340,452 @@ function TimerScreen({ navigation }: Props) {
 
     return () => {
       isMounted = false;
-      clearComboCallouts();
+      clearAllTimeouts();
       Speech.stop();
       if (beepSoundRef.current) {
         beepSoundRef.current.unloadAsync();
         beepSoundRef.current = null;
       }
     };
-  }, [clearComboCallouts]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const speak = useCallback(
+    (text: string, options: { onDone?: () => void } = {}) => {
+      Speech.speak(text, {
+        language: "en-US",
+        voice: coachVoiceId,
+        rate: Platform.OS === "android" ? 0.88 : 0.95,
+        pitch: 1,
+        onDone: options.onDone,
+      });
+    },
+    [coachVoiceId]
+  );
+
+  // === Schedule plumbing ===
+
+  function clearAllTimeouts() {
+    scheduleTimeoutsRef.current.forEach((t) => clearTimeout(t));
+    scheduleTimeoutsRef.current = [];
+    if (dynamicPrimaryHandleRef.current) {
+      clearTimeout(dynamicPrimaryHandleRef.current);
+      dynamicPrimaryHandleRef.current = null;
+    }
+    dynamicPrimaryTargetTimeRef.current = null;
+    dynamicPrimaryFiredRef.current = false;
+  }
+
+  const scheduleAt = useCallback((offsetMs: number, fn: () => void) => {
+    const started = roundStartedAtRef.current;
+    if (started == null) return;
+    const target = started + offsetMs + pausedAccumMsRef.current;
+    const delay = Math.max(0, target - Date.now());
+    const id = setTimeout(() => {
+      if (!isRunningRef.current || isPausedRef.current) return;
+      fn();
+    }, delay);
+    scheduleTimeoutsRef.current.push(id as unknown as NodeJS.Timeout);
+  }, []);
+
+  // === Classic scheduler ===
+
+  const distributeReminderOffsets = (count: number): number[] => {
+    if (count <= 0) return [];
+    const span = REMINDER_WINDOW_END_MS - REMINDER_WINDOW_START_MS; // 130s
+    const step = span / (count + 1);
+    return Array.from({ length: count }, (_, i) =>
+      Math.round(REMINDER_WINDOW_START_MS + step * (i + 1))
+    );
+  };
+
+  const scheduleClassicRound = useCallback(
+    (round: Round, fromReminderIdx: number = 0) => {
+      const anchorSpeech = round.anchorCombo.expandedSpeech;
+      const description = round.classicDescription;
+      const reminders = round.classicReminders;
+      const offsets = distributeReminderOffsets(reminders.length);
+
+      // Anchor speech immediately (no delay) ONLY when fresh round start.
+      if (fromReminderIdx === 0) {
+        scheduleAt(0, () => {
+          pulseCard();
+          speak(anchorSpeech);
+        });
+        if (description) {
+          scheduleAt(DESCRIPTION_OFFSET_MS, () => speak(description));
+          // One-time heads-up that they can re-read the description via the
+          // info icon. Fires once per workout, after the description plays.
+          if (!infoHintPlayedRef.current) {
+            infoHintPlayedRef.current = true;
+            scheduleAt(DESCRIPTION_OFFSET_MS + 14_000, () => {
+              speak("Tap the info icon up top if you need a recap.");
+            });
+          }
+        }
+      }
+
+      // Distribute reminders.
+      for (let i = fromReminderIdx; i < reminders.length; i++) {
+        const offset = offsets[i];
+        const reminder = reminders[i];
+        scheduleAt(offset, () => {
+          classicNextReminderIdxRef.current = i + 1;
+          speak(reminder.speech);
+        });
+      }
+
+      // End-of-round bells.
+      scheduleAt(END_OF_ROUND_WARN_MS, () => {
+        playBeep();
+        speak("ten seconds");
+      });
+      scheduleAt(END_OF_ROUND_END_MS, () => {
+        playBeep();
+      });
+    },
+    [pulseCard, scheduleAt, speak, playBeep]
+  );
+
+  // === Dynamic scheduler (hybrid gap-based per v5 §5.9) ===
+
+  const buildDynamicComboList = useCallback(
+    (round: Round, tier: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9) => {
+      const anchorSpeech = round.anchorCombo.expandedSpeech;
+      const anchorEstMs = estimateSpeechDuration(
+        anchorSpeech,
+        Platform.OS === "android" ? "android" : "ios"
+      );
+      const perCallMs = anchorEstMs + DYNAMIC_GAP_MS;
+      const numCallsRaw = Math.floor(LATEST_DYNAMIC_FIRE_MS / perCallMs);
+      const numCalls = Math.max(1, Math.min(MAX_DYNAMIC_CALLS, numCallsRaw));
+
+      const variations = generateVariations(
+        round.anchorCombo.notation,
+        numCalls - 1,
+        tier
+      );
+
+      const combos: { notation: string; speech: string }[] = [
+        {
+          notation: round.anchorCombo.notation,
+          speech: anchorSpeech,
+        },
+      ];
+      for (const v of variations) {
+        combos.push({
+          notation: v,
+          speech: expandForSpeech(v),
+        });
+      }
+
+      // Anchor reannouncements: find the slots whose expected fire time is
+      // closest to t=90s and t=153s and overwrite with the anchor.
+      const expectedFireTimes = combos.map((_, i) => i * perCallMs);
+      const replaceSlot = (targetMs: number) => {
+        if (combos.length < 2) return;
+        let bestIdx = -1;
+        let bestDist = Infinity;
+        // Don't replace slot 0 (it's already the anchor).
+        for (let i = 1; i < expectedFireTimes.length; i++) {
+          const d = Math.abs(expectedFireTimes[i] - targetMs);
+          if (d < bestDist) {
+            bestDist = d;
+            bestIdx = i;
+          }
+        }
+        if (bestIdx > 0) {
+          combos[bestIdx] = {
+            notation: round.anchorCombo.notation,
+            speech: anchorSpeech,
+          };
+        }
+      };
+      replaceSlot(ANCHOR_REANNOUNCE_PRIMARY_MS);
+      replaceSlot(ANCHOR_REANNOUNCE_SECONDARY_MS);
+
+      return combos;
+    },
+    []
+  );
+
+  const fireDynamicCombo = useCallback(
+    (idx: number) => {
+      const combos = dynamicComboListRef.current;
+      if (combos.length === 0) return;
+      const started = roundStartedAtRef.current;
+      if (started == null) return;
+      const elapsed = Date.now() - started - pausedAccumMsRef.current;
+      if (elapsed > LATEST_DYNAMIC_FIRE_MS) return;
+
+      // Cycle through the variation pool. Termination is wall-clock based
+      // (above); small anchors (e.g. "1-2" yields ~5 variations) need to
+      // recycle to fill the 180s round per the Shadow Boxing pad-work pattern.
+      const effectiveIdx = idx % combos.length;
+      const combo = combos[effectiveIdx];
+      dynamicNextIdxRef.current = idx;
+      setDynamicNotation(combo.notation);
+      pulseCard();
+
+      const platform = Platform.OS === "android" ? "android" : "ios";
+      const estimated = estimateSpeechDuration(combo.speech, platform);
+      const targetTime = Date.now() + estimated + DYNAMIC_GAP_MS;
+
+      // Reset primary-timer bookkeeping for this fire.
+      if (dynamicPrimaryHandleRef.current) {
+        clearTimeout(dynamicPrimaryHandleRef.current);
+      }
+      dynamicPrimaryFiredRef.current = false;
+      dynamicPrimaryTargetTimeRef.current = targetTime;
+
+      const advance = () => {
+        if (!isRunningRef.current || isPausedRef.current) return;
+        dynamicPrimaryFiredRef.current = true;
+        fireDynamicCombo(idx + 1);
+      };
+
+      const handle = setTimeout(advance, estimated + DYNAMIC_GAP_MS);
+      dynamicPrimaryHandleRef.current = handle;
+      scheduleTimeoutsRef.current.push(handle as unknown as NodeJS.Timeout);
+
+      speak(combo.speech, {
+        onDone: () => {
+          if (!isRunningRef.current || isPausedRef.current) return;
+          // If onDone fires before the primary timer's target, the primary
+          // will fire on schedule — the natural gap is (estimated+4000) -
+          // actualDuration, which is ≥ 4s for under-estimates. No-op.
+          if (Date.now() < (dynamicPrimaryTargetTimeRef.current ?? 0)) return;
+          // onDone fired late. If the primary already fired, the next combo
+          // is already speaking — accept the slight overlap.
+          if (dynamicPrimaryFiredRef.current) return;
+          // Primary hasn't fired yet (rare; would require a 8s+ delay
+          // between actual speech end and the primary). Cancel and force a
+          // clean 4s gap from now.
+          if (dynamicPrimaryHandleRef.current) {
+            clearTimeout(dynamicPrimaryHandleRef.current);
+            dynamicPrimaryHandleRef.current = null;
+          }
+          dynamicPrimaryTargetTimeRef.current = null;
+          const handle2 = setTimeout(advance, DYNAMIC_GAP_MS);
+          dynamicPrimaryHandleRef.current = handle2;
+          scheduleTimeoutsRef.current.push(
+            handle2 as unknown as NodeJS.Timeout
+          );
+        },
+      });
+    },
+    [pulseCard, speak]
+  );
+
+  const scheduleDynamicRound = useCallback(
+    (round: Round, fromIdx: number = 0) => {
+      const tier = tierFromLevelProgress(boxingLevel, nextLevelProgress);
+      const combos = buildDynamicComboList(round, tier);
+      dynamicComboListRef.current = combos;
+
+      // End-of-round bells fire on absolute schedule regardless of combo loop.
+      scheduleAt(END_OF_ROUND_WARN_MS, () => {
+        playBeep();
+        speak("ten seconds");
+      });
+      scheduleAt(END_OF_ROUND_END_MS, () => {
+        playBeep();
+      });
+
+      // Kick off the gap-based loop at the desired index.
+      setDynamicNotation(combos[fromIdx]?.notation ?? null);
+      fireDynamicCombo(fromIdx);
+    },
+    [
+      boxingLevel,
+      nextLevelProgress,
+      buildDynamicComboList,
+      fireDynamicCombo,
+      playBeep,
+      scheduleAt,
+      speak,
+    ]
+  );
+
+  // === Round-start orchestration ===
+
+  const startWorkSchedule = useCallback(
+    (round: Round) => {
+      clearAllTimeouts();
+      Speech.stop();
+      lastBeepSecondRef.current = null;
+      classicNextReminderIdxRef.current = 0;
+      dynamicNextIdxRef.current = 0;
+      pausedAccumMsRef.current = 0;
+      pausedAtRef.current = null;
+      roundStartedAtRef.current = Date.now();
+
+      // Round-start bell.
+      playBeep();
+
+      if (workoutMode === "dynamic") {
+        scheduleDynamicRound(round);
+      } else {
+        scheduleClassicRound(round);
+      }
+    },
+    [workoutMode, scheduleDynamicRound, scheduleClassicRound, playBeep]
+  );
+
+  // Keep refs in sync with state for setTimeout callbacks.
+  useEffect(() => {
+    isRunningRef.current = isRunning;
+  }, [isRunning]);
+
+  useEffect(() => {
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
+
+  // Re-anchor schedule on resume from pause.
+  useEffect(() => {
+    if (
+      !isPaused &&
+      isRunning &&
+      phase === "work" &&
+      pausedAtRef.current != null
+    ) {
+      const pauseDuration = Date.now() - pausedAtRef.current;
+      pausedAccumMsRef.current += pauseDuration;
+      pausedAtRef.current = null;
+
+      const round = currentRoundData;
+      if (!round) return;
+      // Wipe pending timeouts and re-schedule remaining work.
+      clearAllTimeouts();
+
+      const elapsed =
+        Date.now() - (roundStartedAtRef.current ?? Date.now()) - pausedAccumMsRef.current;
+
+      if (workoutMode === "dynamic") {
+        // Re-fire the current combo from start (per v5 §5.9).
+        // End-of-round bells re-armed.
+        if (elapsed < END_OF_ROUND_WARN_MS) {
+          scheduleAt(END_OF_ROUND_WARN_MS, () => {
+            playBeep();
+            speak("ten seconds");
+          });
+        }
+        if (elapsed < END_OF_ROUND_END_MS) {
+          scheduleAt(END_OF_ROUND_END_MS, () => {
+            playBeep();
+          });
+        }
+        if (elapsed < LATEST_DYNAMIC_FIRE_MS) {
+          fireDynamicCombo(dynamicNextIdxRef.current);
+        }
+      } else {
+        scheduleClassicRound(round, classicNextReminderIdxRef.current);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPaused, isRunning, phase, workoutMode]);
+
+  // Round-key effect: start a new schedule whenever (round, mode) changes
+  // and we're in work phase + running.
+  useEffect(() => {
+    if (!isRunning || isPaused || phase !== "work") return;
+    if (!currentRoundData) return;
+    const key = `${currentRound}-${workoutMode}-${currentRoundData.anchorCombo.notation}`;
+    if (lastScheduledRoundKeyRef.current === key) return;
+    lastScheduledRoundKeyRef.current = key;
+    startWorkSchedule(currentRoundData);
+  }, [
+    currentRound,
+    currentRoundData,
+    isPaused,
+    isRunning,
+    phase,
+    workoutMode,
+    startWorkSchedule,
+  ]);
+
+  // Stop speech + timeouts when not running.
+  useEffect(() => {
+    if (!isRunning || isPaused) {
+      if (!showRating) {
+        Speech.stop();
+      }
+      clearAllTimeouts();
+    }
+  }, [isPaused, isRunning, showRating]);
+
+  // === AppState foreground re-anchor ===
+
+  useEffect(() => {
+    const handler = (next: AppStateStatus) => {
+      if (next !== "active") return;
+      if (!isRunningRef.current || isPausedRef.current) return;
+      if (phase !== "work") return;
+      const round = currentRoundData;
+      if (!round) return;
+      const started = roundStartedAtRef.current;
+      if (started == null) return;
+      const elapsed = Date.now() - started - pausedAccumMsRef.current;
+      if (elapsed > END_OF_ROUND_END_MS) return;
+
+      clearAllTimeouts();
+      if (workoutMode === "dynamic") {
+        if (elapsed < END_OF_ROUND_WARN_MS) {
+          scheduleAt(END_OF_ROUND_WARN_MS, () => {
+            playBeep();
+            speak("ten seconds");
+          });
+        }
+        scheduleAt(END_OF_ROUND_END_MS, () => {
+          playBeep();
+        });
+        if (elapsed < LATEST_DYNAMIC_FIRE_MS) {
+          fireDynamicCombo(dynamicNextIdxRef.current);
+        }
+      } else {
+        scheduleClassicRound(round, classicNextReminderIdxRef.current);
+      }
+    };
+    const sub = AppState.addEventListener("change", handler);
+    return () => sub.remove();
+  }, [
+    currentRoundData,
+    fireDynamicCombo,
+    phase,
+    playBeep,
+    scheduleAt,
+    scheduleClassicRound,
+    speak,
+    workoutMode,
+  ]);
+
+  // === Tick (display countdown + work/rest transitions) ===
+
+  const startRest = useCallback(() => {
+    setPhase("rest");
+    setRestRemaining(REST_DURATION);
+    clearAllTimeouts();
+    restStartedAtRef.current = Date.now();
+    restPausedAccumMsRef.current = 0;
+    restPausedAtRef.current = null;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+  }, []);
+
+  const startNextRound = useCallback(() => {
+    setCurrentRound((r) => r + 1);
+    setTimeRemaining(WORK_DURATION);
+    setRestRemaining(REST_DURATION);
+    setPhase("work");
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  }, []);
+
+  const resetRoundAnchors = useCallback(() => {
+    Speech.stop();
+    clearAllTimeouts();
+    roundStartedAtRef.current = Date.now();
+    pausedAccumMsRef.current = 0;
+    pausedAtRef.current = null;
+  }, [clearAllTimeouts]);
 
   const finishWorkout = useCallback(() => {
     if (!currentWorkout) return;
@@ -378,14 +796,13 @@ function TimerScreen({ navigation }: Props) {
       workoutPlanId: currentWorkout.id,
       completedAt,
       duration: currentWorkout.duration,
-      rounds: currentWorkout.rounds,
+      rounds: currentWorkout.rounds.length,
       workoutName: currentWorkout.name,
       workoutType: currentWorkout.type,
     };
 
     addWorkoutToHistory(entry);
 
-    // Allow store to settle before evaluating achievements.
     setTimeout(() => {
       const newAchievements = checkAchievements(
         [entry, ...workoutHistory],
@@ -403,175 +820,146 @@ function TimerScreen({ navigation }: Props) {
     setFinishedAt(completedAt);
     setShowRating(true);
     setIsRunning(false);
-  }, [addWorkoutToHistory, currentWorkout, currentStreak, longestStreak, speak, unlockAchievement, unlockedAchievements, workoutHistory]);
+  }, [
+    addWorkoutToHistory,
+    currentStreak,
+    currentWorkout,
+    longestStreak,
+    speak,
+    unlockAchievement,
+    unlockedAchievements,
+    workoutHistory,
+  ]);
 
-  const exitToHome = useCallback(() => {
-    const shouldShowAd = !isEarlyExitRef.current;
-    if (shouldShowAd) {
-      postWorkoutAd.show(() => navigation.goBack());
-    } else {
-      navigation.goBack();
+  // Round navigation: media-style rewind + skip controls. Both stop any active
+  // TTS, clear scheduled timeouts, reset wall-clock anchors, and update state —
+  // the existing round-start useEffect re-fires bell + anchor speech for the
+  // new round. Skip past the last round triggers finishWorkout → rating modal.
+  const skipRound = useCallback(() => {
+    if (!isRunning) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (currentRound >= totalRounds) {
+      resetRoundAnchors();
+      finishWorkout();
+      return;
     }
-  }, [navigation, postWorkoutAd]);
-
-  const submitRating = useCallback(
-    async (rating: 1 | 2 | 3) => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const completedAt = finishedAt ?? new Date();
-      if (currentWorkout && userId) {
-        // Fire-and-forget — UX shouldn't wait on the network.
-        logWorkoutSession({
-          userId,
-          workoutName: currentWorkout.name,
-          difficulty: currentWorkout.difficulty,
-          duration: currentWorkout.duration,
-          rounds: currentWorkout.rounds,
-          completedAt: completedAt.toISOString(),
-          durationMinutes: Math.round(currentWorkout.duration),
-          combosAttempted: currentWorkout.combos.length,
-          combosCompleted: currentWorkout.combos.length,
-          accuracy: 0,
-          difficultyRating: rating,
-        }).catch(() => {
-          // Local state already updated; cloud sync failure is non-blocking.
-        });
-      }
-      setShowRating(false);
-      postWorkoutAd.show(() => navigation.goBack());
-    },
-    [currentWorkout, finishedAt, navigation, postWorkoutAd, userId]
-  );
-
-  const skipRating = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const completedAt = finishedAt ?? new Date();
-    if (currentWorkout && userId) {
-      logWorkoutSession({
-        userId,
-        workoutName: currentWorkout.name,
-        difficulty: currentWorkout.difficulty,
-        duration: currentWorkout.duration,
-        rounds: currentWorkout.rounds,
-        completedAt: completedAt.toISOString(),
-        durationMinutes: Math.round(currentWorkout.duration),
-        combosAttempted: currentWorkout.combos.length,
-        combosCompleted: currentWorkout.combos.length,
-        accuracy: 0,
-      }).catch(() => {});
-    }
-    setShowRating(false);
-    postWorkoutAd.show(() => navigation.goBack());
-  }, [currentWorkout, finishedAt, navigation, postWorkoutAd, userId]);
-
-  const startRest = useCallback(() => {
-    setPhase("rest");
-    setRestRemaining(REST_DURATION);
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-  }, []);
-
-  const startNextRound = useCallback(() => {
+    resetRoundAnchors();
     setCurrentRound((r) => r + 1);
     setTimeRemaining(WORK_DURATION);
     setRestRemaining(REST_DURATION);
     setPhase("work");
-    setCurrentComboIndex((i) => (i + 1) % (combos.length || 1));
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-  }, [combos.length]);
+  }, [
+    currentRound,
+    finishWorkout,
+    isRunning,
+    resetRoundAnchors,
+    totalRounds,
+  ]);
+
+  const rewindRound = useCallback(() => {
+    if (!isRunning) return;
+    if (currentRound <= 1) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    resetRoundAnchors();
+    setCurrentRound((r) => Math.max(1, r - 1));
+    setTimeRemaining(WORK_DURATION);
+    setRestRemaining(REST_DURATION);
+    setPhase("work");
+  }, [currentRound, isRunning, resetRoundAnchors]);
 
   useEffect(() => {
     if (!isRunning || isPaused) return;
 
-    const interval = setInterval(() => {
+    const tick = () => {
       if (phase === "work") {
-        setTimeRemaining((t) => {
-          if (t <= 1) {
-            if (currentRound >= totalRounds) {
-              finishWorkout();
-              return 0;
-            }
+        const startedAt = roundStartedAtRef.current;
+        if (startedAt == null) return;
+        const elapsedSec = Math.floor(
+          (Date.now() - startedAt - pausedAccumMsRef.current) / 1000
+        );
+        const remaining = Math.max(0, WORK_DURATION - elapsedSec);
+        setTimeRemaining(remaining);
+        if (remaining <= 0) {
+          if (currentRound >= totalRounds) {
+            finishWorkout();
+          } else {
             startRest();
-            return 0;
           }
-          return t - 1;
-        });
+        }
       } else {
-        setRestRemaining((r) => {
-          if (r <= 1) {
-            startNextRound();
-            return REST_DURATION;
-          }
-          return r - 1;
-        });
+        const startedAt = restStartedAtRef.current;
+        if (startedAt == null) return;
+        const elapsedSec = Math.floor(
+          (Date.now() - startedAt - restPausedAccumMsRef.current) / 1000
+        );
+        const remaining = Math.max(0, REST_DURATION - elapsedSec);
+        setRestRemaining(remaining);
+        if (remaining <= 0) {
+          startNextRound();
+        }
       }
-    }, 1000);
+    };
+
+    tick();
+    const interval = setInterval(tick, 250);
 
     return () => clearInterval(interval);
-  }, [currentRound, finishWorkout, isPaused, isRunning, phase, startNextRound, startRest, totalRounds]);
+  }, [
+    currentRound,
+    finishWorkout,
+    isPaused,
+    isRunning,
+    phase,
+    startNextRound,
+    startRest,
+    totalRounds,
+  ]);
 
-  // Keep refs in lockstep with state so the chained setTimeout callbacks
-  // (which capture refs, not state snapshots) see live values.
+  // Total elapsed workout time (excludes pauses). Updates at 1Hz — display is
+  // seconds-precision so we don't need the 250ms cadence of the work/rest tick.
   useEffect(() => {
-    isRunningRef.current = isRunning;
-  }, [isRunning]);
-  useEffect(() => {
-    isPausedRef.current = isPaused;
-    // On resume in Dynamic mode, account for elapsed pause time and re-schedule
-    // remaining combos / fillers against the offset wall-clock.
-    if (
-      workoutMode === "dynamic" &&
-      !isPaused &&
-      isRunning &&
-      phase === "work" &&
-      pausedAtRef.current != null
-    ) {
-      pausedAccumMsRef.current += Date.now() - pausedAtRef.current;
-      pausedAtRef.current = null;
-      scheduleDynamicFromIndex(
-        dynamicNextIndexRef.current,
-        dynamicNextFillerIndexRef.current
-      );
-    }
-  }, [isPaused, isRunning, phase, scheduleDynamicFromIndex, workoutMode]);
+    if (!isRunning || isPaused) return;
+    const update = () => {
+      const startedAt = workoutStartedAtRef.current;
+      if (startedAt == null) return;
+      const elapsedMs =
+        Date.now() - startedAt - workoutPausedAccumMsRef.current;
+      setTotalElapsedSec(Math.max(0, Math.floor(elapsedMs / 1000)));
+    };
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [isPaused, isRunning]);
 
-  useEffect(() => {
-    if (!isRunning || isPaused) {
-      if (!showRating) {
-        Speech.stop();
-      }
-      clearComboCallouts();
-    }
-  }, [clearComboCallouts, isPaused, isRunning, showRating]);
-
-  useEffect(() => {
-    if (!isRunning || isPaused || phase !== "work") {
-      clearComboCallouts();
-      return;
-    }
-    if (!combo) return;
-
-    const comboKey = `${currentRound}-${combo.notation}-${combo.name}-${workoutMode}`;
-    if (lastComboKeyRef.current !== comboKey) {
-      lastComboKeyRef.current = comboKey;
-      if (workoutMode === "dynamic") {
-        scheduleDynamicCallouts(combo.notation);
-      } else {
-        setDynamicComboNotation(null);
-        scheduleComboCallouts(combo.name, combo.notation, combo.description);
-      }
-    }
-  }, [clearComboCallouts, combo, currentRound, isPaused, isRunning, phase, scheduleComboCallouts, scheduleDynamicCallouts, workoutMode]);
-
+  // Rest-phase narration (preserved).
   useEffect(() => {
     if (!isRunning || isPaused) return;
     if (phase === "rest") {
       if (restSpokenRef.current !== currentRound) {
         restSpokenRef.current = currentRound;
-        speak(`Rest. ${restRemaining} seconds`);
+        const nextRound = rounds[currentRound];
+        const tip = nextRound?.restTip;
+        if (tip) {
+          speak(`Rest. ${restRemaining} seconds.`);
+          // Plan technique tip for ~25s in.
+          setTimeout(() => {
+            if (
+              isRunningRef.current &&
+              !isPausedRef.current &&
+              phase === "rest"
+            ) {
+              speak(tip);
+            }
+          }, 25_000);
+        } else {
+          speak(`Rest. ${restRemaining} seconds.`);
+        }
       }
     } else {
       restSpokenRef.current = null;
     }
-  }, [currentRound, isPaused, isRunning, phase, restRemaining, speak]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentRound, isPaused, isRunning, phase]);
 
   useEffect(() => {
     if (!isRunning || isPaused || phase !== "rest") return;
@@ -601,9 +989,6 @@ function TimerScreen({ navigation }: Props) {
     } else if (timeRemaining === 60) {
       lastMinuteCalloutRef.current = timeRemaining;
       speak("1 minute left");
-    } else if (timeRemaining === 10) {
-      lastMinuteCalloutRef.current = timeRemaining;
-      speak("10 seconds");
     }
   }, [isPaused, isRunning, phase, speak, timeRemaining]);
 
@@ -617,32 +1002,329 @@ function TimerScreen({ navigation }: Props) {
     }
   }, [isPaused, isRunning, phase, playBeep, timeRemaining]);
 
-  // One combo per round — no within-round cycling. The combo advances only
-  // when a new round starts (handled in startNextRound).
+  // === Pause/resume controls ===
 
   const toggleRunning = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     if (!isRunning) {
+      if (workoutStartedAtRef.current == null) {
+        workoutStartedAtRef.current = Date.now();
+      }
       setIsRunning(true);
       setIsPaused(false);
       return;
     }
     const enteringPause = !isPaused;
     if (enteringPause) {
-      pausedAtRef.current = Date.now();
-    } else if (workoutMode === "classic") {
-      // Classic: nudge the comboKey effect to re-fire the standard 25/40/55s
-      // schedule from the top. Dynamic re-anchoring is handled in the
-      // isPaused sync useEffect.
-      lastComboKeyRef.current = null;
+      if (phase === "work") {
+        pausedAtRef.current = Date.now();
+      } else {
+        restPausedAtRef.current = Date.now();
+      }
+      workoutPausedAtRef.current = Date.now();
+      Speech.stop();
+    } else {
+      if (workoutMode === "classic") {
+        // Nudge round-key effect to re-arm on resume.
+        lastScheduledRoundKeyRef.current = null;
+      }
+      if (workoutPausedAtRef.current != null) {
+        workoutPausedAccumMsRef.current +=
+          Date.now() - workoutPausedAtRef.current;
+        workoutPausedAtRef.current = null;
+      }
     }
     setIsPaused(enteringPause);
   };
 
+  // Rest-phase pause accumulator (work has its own effect at lines ~580).
+  useEffect(() => {
+    if (
+      !isPaused &&
+      isRunning &&
+      phase === "rest" &&
+      restPausedAtRef.current != null
+    ) {
+      restPausedAccumMsRef.current += Date.now() - restPausedAtRef.current;
+      restPausedAtRef.current = null;
+    }
+  }, [isPaused, isRunning, phase]);
+
+  // Foreground service: keeps JS alive on Android while a workout is running.
+  // iOS relies on the audio session (set in App.tsx). On unmount we always
+  // stop, so navigating away cleans up.
+  useEffect(() => {
+    if (isRunning) {
+      startWorkoutBackgroundTask().catch(() => {});
+    } else {
+      stopWorkoutBackgroundTask().catch(() => {});
+    }
+  }, [isRunning]);
+
+  useEffect(() => {
+    if (!isRunning) return;
+    const desc =
+      phase === "work"
+        ? `Round ${currentRound} of ${totalRounds}`
+        : `Rest before round ${Math.min(currentRound + 1, totalRounds)}`;
+    updateWorkoutBackgroundTask(desc).catch(() => {});
+  }, [isRunning, phase, currentRound, totalRounds]);
+
+  useEffect(() => {
+    return () => {
+      stopWorkoutBackgroundTask().catch(() => {});
+    };
+  }, []);
+
+  // === Rating + progression flow ===
+
+  const persistProgressionUpdate = useCallback(
+    async (outcome: RatingOutcome) => {
+      if (!currentWorkout || !boxingLevel) return null;
+
+      const result = computeProgression({
+        currentLevel: boxingLevel,
+        currentProgress: nextLevelProgress,
+        outcome,
+        levelCapStayingSince,
+        levelCapTooEasyCountSinceStay,
+        demotionWindow,
+      });
+
+      applyProgressionResult(result);
+
+      // Collect raw anchor notations for the variety ring buffer. Sent verbatim
+      // to the EF, which inlines them in the user prompt as "avoid these". We
+      // store notations (not hashes) because Claude reads them as text.
+      const newNotations = currentWorkout.rounds.map(
+        (r) => r.anchorCombo.notation
+      );
+      pushComboSignatures(newNotations);
+
+      if (userId) {
+        const totalMinutes = workoutHistory.reduce(
+          (sum, w) => sum + (w.duration || 0),
+          0
+        );
+        const updatedSignatures = useUserStore.getState().recentComboSignatures;
+        upsertUserStats(userId, {
+          userId,
+          totalWorkouts: workoutHistory.length + 1,
+          totalMinutes: totalMinutes + currentWorkout.duration,
+          currentLevel: boxingLevel,
+          nextLevelProgress: result.newProgress,
+          currentStreak,
+          longestStreak,
+          lastWorkoutDate: (finishedAt ?? new Date()).toISOString(),
+          levelCapStayingSince,
+          levelCapTooEasyCountSinceStay: result.newLevelCapTooEasyCount,
+          recentComboSignatures: updatedSignatures,
+          demotionWindow: result.newDemotionWindow,
+        }).catch(() => {});
+      }
+
+      return result;
+    },
+    [
+      applyProgressionResult,
+      boxingLevel,
+      currentStreak,
+      currentWorkout,
+      demotionWindow,
+      finishedAt,
+      levelCapStayingSince,
+      levelCapTooEasyCountSinceStay,
+      longestStreak,
+      nextLevelProgress,
+      pushComboSignatures,
+      userId,
+      workoutHistory,
+    ]
+  );
+
+  const submitRating = useCallback(
+    async (rating: 1 | 2 | 3) => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      const completedAt = finishedAt ?? new Date();
+
+      const outcome: RatingOutcome = isEarlyExitRef.current
+        ? "early_exit"
+        : ratingToOutcome(rating);
+      const result = await persistProgressionUpdate(outcome);
+
+      if (currentWorkout && userId) {
+        const tel = currentWorkout.signalTelemetry;
+        logWorkoutSession({
+          userId,
+          workoutName: currentWorkout.name,
+          difficulty: currentWorkout.difficulty,
+          duration: currentWorkout.duration,
+          rounds: currentWorkout.rounds.length,
+          completedAt: completedAt.toISOString(),
+          durationMinutes: Math.round(currentWorkout.duration),
+          combosAttempted: currentWorkout.rounds.length,
+          combosCompleted: currentWorkout.rounds.length,
+          accuracy: 0,
+          difficultyRating: rating,
+          signalStruggleHitCount: tel?.struggleHitCount,
+          signalSuccessHitCount: tel?.successHitCount,
+          signalRecentHitCount: tel?.recentHitCount,
+          signalAtLevelCap: tel?.atLevelCap,
+          signalFeatureStruggles: tel?.featureStruggles,
+          signalFeatureSuccesses: tel?.featureSuccesses,
+        }).catch(() => {});
+
+        // Adaptive-learning telemetry: only on real ratings (not early-exit).
+        // Each anchor's count gets +1 in the bucket matching the rating.
+        if (!isEarlyExitRef.current) {
+          recordComboProgressForSession(
+            userId,
+            currentWorkout.rounds.map((r) => ({
+              notation: r.anchorCombo.notation,
+              name: currentWorkout.name,
+            })),
+            rating
+          ).catch(() => {});
+        }
+      }
+
+      setShowRating(false);
+
+      if (
+        result?.shouldShowCelebration &&
+        result.newLevelIfAdvancing &&
+        !isEarlyExitRef.current
+      ) {
+        setPendingAdvanceLevel(result.newLevelIfAdvancing);
+        setShowLevelUp(true);
+      } else {
+        postWorkoutAd.show(() => navigation.goBack());
+      }
+    },
+    [
+      currentWorkout,
+      finishedAt,
+      navigation,
+      persistProgressionUpdate,
+      postWorkoutAd,
+      userId,
+    ]
+  );
+
+  const skipRating = useCallback(async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const completedAt = finishedAt ?? new Date();
+    const outcome: RatingOutcome = isEarlyExitRef.current
+      ? "early_exit"
+      : "skipped";
+    const result = await persistProgressionUpdate(outcome);
+
+    if (currentWorkout && userId) {
+      const tel = currentWorkout.signalTelemetry;
+      logWorkoutSession({
+        userId,
+        workoutName: currentWorkout.name,
+        difficulty: currentWorkout.difficulty,
+        duration: currentWorkout.duration,
+        rounds: currentWorkout.rounds.length,
+        completedAt: completedAt.toISOString(),
+        durationMinutes: Math.round(currentWorkout.duration),
+        combosAttempted: currentWorkout.rounds.length,
+        combosCompleted: currentWorkout.rounds.length,
+        accuracy: 0,
+        signalStruggleHitCount: tel?.struggleHitCount,
+        signalSuccessHitCount: tel?.successHitCount,
+        signalRecentHitCount: tel?.recentHitCount,
+        signalAtLevelCap: tel?.atLevelCap,
+        signalFeatureStruggles: tel?.featureStruggles,
+        signalFeatureSuccesses: tel?.featureSuccesses,
+      }).catch(() => {});
+    }
+
+    setShowRating(false);
+
+    if (
+      result?.shouldShowCelebration &&
+      result.newLevelIfAdvancing &&
+      !isEarlyExitRef.current
+    ) {
+      setPendingAdvanceLevel(result.newLevelIfAdvancing);
+      setShowLevelUp(true);
+    } else {
+      postWorkoutAd.show(() => navigation.goBack());
+    }
+  }, [
+    currentWorkout,
+    finishedAt,
+    navigation,
+    persistProgressionUpdate,
+    postWorkoutAd,
+    userId,
+  ]);
+
+  // === Level-up modal handlers ===
+
+  const handleAdvance = useCallback(() => {
+    if (!boxingLevel || !pendingAdvanceLevel) return;
+    // applyProgressionResult wrote the raw (possibly >100) progress, so the
+    // store's nextLevelProgress holds the overflow.
+    const storeProgress = useUserStore.getState().nextLevelProgress;
+    const carry = Math.max(0, storeProgress - 100);
+    advanceLevel(pendingAdvanceLevel, carry);
+    if (userId) {
+      upsertUserStats(userId, {
+        userId,
+        currentLevel: pendingAdvanceLevel,
+        nextLevelProgress: carry,
+        levelCapStayingSince: null,
+        levelCapTooEasyCountSinceStay: 0,
+        demotionWindow: [],
+      }).catch(() => {});
+    }
+    unlockAchievement(
+      pendingAdvanceLevel === "intermediate"
+        ? "level_up_inter"
+        : "level_up_advanced"
+    );
+    setShowLevelUp(false);
+    setPendingAdvanceLevel(null);
+    postWorkoutAd.show(() => navigation.goBack());
+  }, [
+    advanceLevel,
+    boxingLevel,
+    navigation,
+    pendingAdvanceLevel,
+    postWorkoutAd,
+    unlockAchievement,
+    userId,
+  ]);
+
+  const handleStay = useCallback(() => {
+    setLevelCapStaying(new Date().toISOString(), 0);
+    if (userId && boxingLevel) {
+      upsertUserStats(userId, {
+        userId,
+        currentLevel: boxingLevel,
+        nextLevelProgress: 100,
+        levelCapStayingSince: new Date().toISOString(),
+        levelCapTooEasyCountSinceStay: 0,
+      }).catch(() => {});
+    }
+    setShowLevelUp(false);
+    setPendingAdvanceLevel(null);
+    postWorkoutAd.show(() => navigation.goBack());
+  }, [
+    boxingLevel,
+    navigation,
+    postWorkoutAd,
+    setLevelCapStaying,
+    userId,
+  ]);
+
   const endWorkout = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     Speech.stop();
-    clearComboCallouts();
+    clearAllTimeouts();
     setIsRunning(false);
     setIsPaused(false);
     isEarlyExitRef.current = true;
@@ -653,24 +1335,19 @@ function TimerScreen({ navigation }: Props) {
   };
 
   const watchLesson = async () => {
-    if (!combo) return;
-
+    if (!anchor) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    const query = `boxing ${combo.name} tutorial ${combo.notation}`;
-    const youtubeSearchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
-
+    const query = `boxing combo ${anchor.notation} tutorial`;
+    const url = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
     try {
-      const canOpen = await Linking.canOpenURL(youtubeSearchUrl);
-      if (canOpen) {
-        await Linking.openURL(youtubeSearchUrl);
-      }
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) await Linking.openURL(url);
     } catch (error) {
       console.error("Error opening YouTube:", error);
     }
   };
 
-  if (!currentWorkout || combos.length === 0) {
+  if (!currentWorkout || rounds.length === 0) {
     return (
       <LinearGradient colors={["#000000", "#1A0000"]} style={{ flex: 1 }}>
         <View className="flex-1 items-center justify-center">
@@ -684,6 +1361,47 @@ function TimerScreen({ navigation }: Props) {
   const mins = Math.floor(displaySeconds / 60);
   const secs = displaySeconds % 60;
 
+  const visibleNotation =
+    workoutMode === "dynamic"
+      ? dynamicNotation ?? anchor?.notation ?? "---"
+      : anchor?.notation ?? "---";
+
+  // Dynamic font sizing for the combo display. Goal: every combo feels big,
+  // regardless of length. Short combos like "1-2b" hit max size; longer combos
+  // like "1-2-slip right-3-pivot left-4" step down through readable tiers and
+  // can wrap to 2 lines. minimumFontScale on the Text component (paired with
+  // numberOfLines: 2) ensures we never shrink past readability.
+  const comboDisplay = expandForDisplay(visibleNotation);
+  // React Native's wrap is greedy — it packs line 1 as full as possible, so
+  // long combos render with a stuffed line 1 + nearly-empty line 2, and the
+  // autoshrink targets the long line. Force a balanced break at the midpoint
+  // by finding the nearest hyphen or space and replacing/inserting a newline
+  // there. Both lines end up roughly equal length, so autoshrink can target
+  // a much larger font size.
+  const comboDisplayWrappable = balancedTwoLineWrap(comboDisplay);
+  const comboFontSize =
+    comboDisplay.length <= 5
+      ? 144
+      : comboDisplay.length <= 9
+        ? 128
+        : comboDisplay.length <= 14
+          ? 112
+          : comboDisplay.length <= 22
+            ? 100
+            : comboDisplay.length <= 32
+              ? 92
+              : 80;
+
+  const totalMins = Math.floor(totalElapsedSec / 60);
+  const totalSecsRem = totalElapsedSec % 60;
+  const totalDisplay = `${totalMins}:${String(totalSecsRem).padStart(2, "0")}`;
+
+  // Per-segment fill for the round indicator bar. Past rounds full, future
+  // empty; the active round fills proportionally with work progress (and stays
+  // full during rest, since the work was completed).
+  const currentWorkFill =
+    phase === "rest" ? 1 : (WORK_DURATION - timeRemaining) / WORK_DURATION;
+
   return (
     <LinearGradient colors={["#000000", "#000000"]} style={{ flex: 1 }}>
       <ScrollView
@@ -695,28 +1413,69 @@ function TimerScreen({ navigation }: Props) {
         }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View className="px-6 py-3 flex-row items-center justify-between">
-          <Text className="text-boxing-gold text-xs font-bold uppercase tracking-widest">
-            {currentWorkout.difficulty}
-          </Text>
-          <Text className="text-gray-500 text-sm">Round {currentRound} / {totalRounds}</Text>
+        {/* Round progress segments — past full gold, current fills with work
+            progress, future stays gray. One segment per round. */}
+        <View className="px-6 pt-2 flex-row" style={{ gap: 4 }}>
+          {Array.from({ length: totalRounds }).map((_, i) => {
+            const fill =
+              i < currentRound - 1
+                ? 1
+                : i === currentRound - 1
+                  ? currentWorkFill
+                  : 0;
+            return (
+              <View
+                key={i}
+                className="flex-1 bg-gray-800 rounded-full overflow-hidden"
+                style={{ height: 3 }}
+              >
+                <View
+                  className="bg-boxing-gold"
+                  style={{
+                    height: 3,
+                    width: `${Math.min(100, Math.max(0, fill * 100))}%`,
+                  }}
+                />
+              </View>
+            );
+          })}
         </View>
 
-        {/* Main Timer Area */}
-        <View className="flex-1 items-center justify-center px-6">
-          {/* Phase Indicator */}
-          <View className="mb-5">
-            <View className="bg-boxing-red/20 px-6 py-2 rounded-full">
-              <Text className="text-boxing-red text-base font-bold uppercase tracking-widest">
-                {phase === "rest" ? "REST" : "WORK"}
-              </Text>
-            </View>
+        {/* Header */}
+        <View className="px-6 py-3 flex-row items-start justify-between">
+          <Text className="text-boxing-gold text-xs font-bold uppercase tracking-widest mt-1">
+            {currentWorkout.difficulty}
+          </Text>
+          <View className="items-end" style={{ gap: 4 }}>
+            <Text className="text-white text-base font-semibold">
+              {totalDisplay}
+            </Text>
+            <Text className="text-white text-sm">
+              Round {currentRound} / {totalRounds}
+            </Text>
+            {workoutMode === "classic" && currentRoundData?.classicDescription ? (
+              <Pressable
+                onPress={() => setShowDescription(true)}
+                className="active:opacity-70"
+                accessibilityRole="button"
+                accessibilityLabel="Show coaching notes"
+                hitSlop={8}
+              >
+                <Ionicons
+                  name="information-circle-outline"
+                  size={28}
+                  color="#FFFFFF"
+                />
+              </Pressable>
+            ) : null}
           </View>
+        </View>
 
+        {/* Main Timer Area — chronometer + combo centered as one group */}
+        <View className="flex-1 items-center justify-center px-6" style={{ gap: 32 }}>
           {/* Large Timer */}
           <Text
-            className="text-white font-black tracking-tight leading-none mb-6"
+            className="text-white font-black tracking-tight leading-none"
             style={{ fontSize: 96 }}
             adjustsFontSizeToFit
             numberOfLines={1}
@@ -724,79 +1483,93 @@ function TimerScreen({ navigation }: Props) {
             {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
           </Text>
 
-          {/* Exercise Card — replaced by REST banner during rest phase */}
-          {phase === "rest" ? (
-            <View className="w-full items-center justify-center mb-6 py-8">
+          {/* Combo — dynamic font size + 2-line wrap fallback for long combos */}
+          <View className="w-full items-center">
+            {phase === "rest" ? (
               <Text
-                className="text-boxing-red font-black tracking-widest"
-                style={{ fontSize: 96, lineHeight: 100 }}
+                className="text-boxing-red font-black tracking-widest text-center"
+                style={{ fontSize: 144, lineHeight: 148 }}
                 adjustsFontSizeToFit
                 numberOfLines={1}
               >
                 REST
               </Text>
-              <Text className="text-gray-400 text-sm mt-2" numberOfLines={1}>
-                Next: {combo?.name ?? "---"}
-              </Text>
-            </View>
-          ) : workoutMode === "dynamic" ? (
-            <View className="w-full bg-[#1A1A1A] rounded-2xl p-5 mb-6">
-              <Text className="text-white/70 text-xs font-bold uppercase tracking-widest mb-2" numberOfLines={1}>
-                Combo
-              </Text>
-              <Text
-                className="text-boxing-red font-black tracking-wider mb-3"
-                style={{ fontSize: 48, lineHeight: 52 }}
-                adjustsFontSizeToFit
-                numberOfLines={1}
+            ) : (
+              <Animated.View
+                style={[cardStyle, { width: "100%", alignItems: "center" }]}
               >
-                {dynamicComboNotation ?? combo?.notation ?? "---"}
-              </Text>
-              <Text className="text-gray-500 text-xs" numberOfLines={1}>
-                Next round: {combos[(currentComboIndex + 1) % combos.length]?.name ?? "---"}
-              </Text>
-            </View>
-          ) : (
-            <View className="w-full bg-[#1A1A1A] rounded-2xl p-5 mb-6">
-              <Text className="text-white text-xl font-bold mb-2" numberOfLines={1}>
-                {combo?.name ?? "---"}
-              </Text>
-              <Text
-                className="text-boxing-red font-black tracking-wider mb-3"
-                style={{ fontSize: 48, lineHeight: 52 }}
-                adjustsFontSizeToFit
-                numberOfLines={1}
-              >
-                {combo?.notation ?? "---"}
-              </Text>
-              <Text className="text-gray-300 text-base leading-6 mb-3">
-                {combo?.description ?? ""}
-              </Text>
-              <Text className="text-gray-500 text-xs" numberOfLines={1}>
-                Next: {combos[(currentComboIndex + 1) % combos.length]?.name ?? "---"}
-              </Text>
-            </View>
-          )}
+                <Text
+                  className="text-boxing-red font-black tracking-wider text-center"
+                  style={{ fontSize: comboFontSize }}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.4}
+                  numberOfLines={comboDisplay.length <= 9 ? 1 : 2}
+                >
+                  {comboDisplayWrappable}
+                </Text>
+                {/* Description hidden — accessible via (i) icon in the header */}
+              </Animated.View>
+            )}
+          </View>
+        </View>
 
-          {/* Pause Button */}
-          <Pressable
-            onPress={toggleRunning}
-            className="active:opacity-80"
-            style={{ width: 72, height: 72 }}
+        {/* Media controls — rewind | pause/play | skip */}
+        <View className="px-6 mb-3">
+          <View
+            className="flex-row items-center justify-center"
+            style={{ gap: 48 }}
           >
-            <View className="w-[72px] h-[72px] bg-boxing-red rounded-full items-center justify-center">
-              <View className="flex-row space-x-1">
-                {isPaused || !isRunning ? (
-                  <View className="w-0 h-0 border-l-[18px] border-l-white border-t-[11px] border-t-transparent border-b-[11px] border-b-transparent ml-1" />
-                ) : (
-                  <>
-                    <View className="w-2 h-7 bg-white rounded-sm" />
-                    <View className="w-2 h-7 bg-white rounded-sm" />
-                  </>
-                )}
+            <Pressable
+              onPress={rewindRound}
+              disabled={currentRound <= 1 || !isRunning}
+              className="active:opacity-70"
+              style={{ width: 56, height: 56, alignItems: "center", justifyContent: "center" }}
+              accessibilityRole="button"
+              accessibilityLabel="Previous round"
+            >
+              <Ionicons
+                name="play-skip-back"
+                size={36}
+                color={currentRound <= 1 || !isRunning ? "#444" : "#FFFFFF"}
+              />
+            </Pressable>
+
+            <Pressable
+              onPress={toggleRunning}
+              className="active:opacity-80"
+              style={{ width: 72, height: 72 }}
+              accessibilityRole="button"
+              accessibilityLabel={isPaused || !isRunning ? "Play" : "Pause"}
+            >
+              <View className="w-[72px] h-[72px] bg-boxing-red rounded-full items-center justify-center">
+                <View className="flex-row space-x-1">
+                  {isPaused || !isRunning ? (
+                    <View className="w-0 h-0 border-l-[18px] border-l-white border-t-[11px] border-t-transparent border-b-[11px] border-b-transparent ml-1" />
+                  ) : (
+                    <>
+                      <View className="w-2 h-7 bg-white rounded-sm" />
+                      <View className="w-2 h-7 bg-white rounded-sm" />
+                    </>
+                  )}
+                </View>
               </View>
-            </View>
-          </Pressable>
+            </Pressable>
+
+            <Pressable
+              onPress={skipRound}
+              disabled={!isRunning}
+              className="active:opacity-70"
+              style={{ width: 56, height: 56, alignItems: "center", justifyContent: "center" }}
+              accessibilityRole="button"
+              accessibilityLabel={currentRound >= totalRounds ? "Finish workout" : "Next round"}
+            >
+              <Ionicons
+                name="play-skip-forward"
+                size={36}
+                color={!isRunning ? "#444" : "#FFFFFF"}
+              />
+            </Pressable>
+          </View>
         </View>
       </ScrollView>
 
@@ -804,105 +1577,151 @@ function TimerScreen({ navigation }: Props) {
         <BannerAdView />
       </View>
 
-        {/* Post-Workout Rating Modal */}
-        {showRating && (
-          <View
-            className="absolute inset-0 bg-black/90 items-center justify-center px-6"
-            style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+      {/* Coaching-notes modal — opened from the (i) icon in the header */}
+      {showDescription && currentRoundData?.classicDescription ? (
+        <Pressable
+          onPress={() => setShowDescription(false)}
+          className="absolute inset-0 bg-black/85 items-center justify-center px-6"
+          style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+          accessibilityRole="button"
+          accessibilityLabel="Dismiss coaching notes"
+        >
+          <Pressable
+            onPress={() => {}}
+            className="bg-[#1A1A1A] rounded-3xl w-full"
+            style={{ maxWidth: 400 }}
           >
-            <View className="bg-[#1A1A1A] rounded-3xl w-full" style={{ maxWidth: 400 }}>
-              <View className="px-6 py-5 border-b border-gray-800">
-                <Text className="text-white text-xl font-bold text-center">
-                  Workout Complete
-                </Text>
-                <Text className="text-gray-400 text-sm text-center mt-1">
-                  How was that?
-                </Text>
-              </View>
-              <View className="p-6 space-y-3">
-                <Pressable onPress={() => submitRating(1)} className="active:opacity-90">
-                  <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-gold">
-                    <Text className="text-white text-center text-base font-bold">
-                      Too Easy
-                    </Text>
-                    <Text className="text-gray-400 text-center text-xs mt-1">
-                      Push me harder next time
-                    </Text>
-                  </View>
-                </Pressable>
-                <Pressable onPress={() => submitRating(2)} className="active:opacity-90">
-                  <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-red">
-                    <Text className="text-white text-center text-base font-bold">
-                      Just Right
-                    </Text>
-                    <Text className="text-gray-400 text-center text-xs mt-1">
-                      Challenging but doable
-                    </Text>
-                  </View>
-                </Pressable>
-                <Pressable onPress={() => submitRating(3)} className="active:opacity-90">
-                  <View className="bg-black rounded-xl py-4 px-6 border-2 border-gray-600">
-                    <Text className="text-white text-center text-base font-bold">
-                      Too Hard
-                    </Text>
-                    <Text className="text-gray-400 text-center text-xs mt-1">
-                      Drop the complexity
-                    </Text>
-                  </View>
-                </Pressable>
-                <Pressable onPress={skipRating} className="active:opacity-80 pt-2">
-                  <Text className="text-gray-500 text-center text-sm">Skip</Text>
-                </Pressable>
-              </View>
+            <View className="px-6 py-5 border-b border-gray-800 flex-row items-center justify-between">
+              <Text className="text-white text-lg font-bold">Coaching notes</Text>
+              <Pressable
+                onPress={() => setShowDescription(false)}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <Ionicons name="close" size={24} color="#9CA3AF" />
+              </Pressable>
+            </View>
+            <View className="px-6 py-5">
+              <Text
+                className="text-boxing-red font-black tracking-wider text-center mb-3"
+                style={{ fontSize: 28 }}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+              >
+                {expandForDisplay(visibleNotation)}
+              </Text>
+              <Text className="text-gray-300 text-base leading-6 text-center">
+                {currentRoundData.classicDescription}
+              </Text>
+            </View>
+          </Pressable>
+        </Pressable>
+      ) : null}
+
+      {/* Post-Workout Rating Modal */}
+      {showRating && (
+        <View
+          className="absolute inset-0 bg-black/90 items-center justify-center px-6"
+          style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+        >
+          <View className="bg-[#1A1A1A] rounded-3xl w-full" style={{ maxWidth: 400 }}>
+            <View className="px-6 py-5 border-b border-gray-800">
+              <Text className="text-white text-xl font-bold text-center">
+                Workout Complete
+              </Text>
+              <Text className="text-gray-400 text-sm text-center mt-1">
+                How was that?
+              </Text>
+            </View>
+            <View className="p-6 space-y-3">
+              <Pressable onPress={() => submitRating(1)} className="active:opacity-90">
+                <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-gold">
+                  <Text className="text-white text-center text-base font-bold">
+                    Too Easy
+                  </Text>
+                  <Text className="text-gray-400 text-center text-xs mt-1">
+                    Push me harder next time
+                  </Text>
+                </View>
+              </Pressable>
+              <Pressable onPress={() => submitRating(2)} className="active:opacity-90">
+                <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-red">
+                  <Text className="text-white text-center text-base font-bold">
+                    Just Right
+                  </Text>
+                  <Text className="text-gray-400 text-center text-xs mt-1">
+                    Challenging but doable
+                  </Text>
+                </View>
+              </Pressable>
+              <Pressable onPress={() => submitRating(3)} className="active:opacity-90">
+                <View className="bg-black rounded-xl py-4 px-6 border-2 border-gray-600">
+                  <Text className="text-white text-center text-base font-bold">
+                    Too Hard
+                  </Text>
+                  <Text className="text-gray-400 text-center text-xs mt-1">
+                    Drop the complexity
+                  </Text>
+                </View>
+              </Pressable>
+              <Pressable onPress={skipRating} className="active:opacity-80 pt-2">
+                <Text className="text-gray-500 text-center text-sm">Skip</Text>
+              </Pressable>
             </View>
           </View>
-        )}
+        </View>
+      )}
 
-        {/* Pause Modal Overlay */}
-        {isPaused && (
-          <View className="absolute inset-0 bg-black/80 items-center justify-center" style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}>
-            <View className="bg-[#1A1A1A] rounded-3xl mx-6 w-full max-w-md" style={{ maxWidth: 400 }}>
-              {/* Modal Header */}
-              <View className="px-6 py-5 border-b border-gray-800">
-                <Text className="text-white text-xl font-bold">Paused</Text>
-              </View>
-
-              {/* Modal Content */}
-              <View className="p-6">
-                <Text className="text-gray-400 text-center text-sm mb-6">
-                  Watch a quick lesson for {combo?.name ?? "this exercise"}
-                </Text>
-
-                {/* YouTube Button */}
-                <Pressable onPress={watchLesson} className="active:opacity-90 mb-3">
-                  <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-red">
-                    <Text className="text-white text-center text-base font-bold">
-                      Watch lesson on YouTube
-                    </Text>
-                  </View>
-                </Pressable>
-
-                {/* Resume Button */}
-                <Pressable onPress={toggleRunning} className="active:opacity-90 mb-3">
-                  <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-gold">
-                    <Text className="text-white text-center text-base font-bold">
-                      Resume
-                    </Text>
-                  </View>
-                </Pressable>
-
-                {/* Exit Button */}
-                <Pressable onPress={endWorkout} className="active:opacity-80">
-                  <View className="bg-[#2A2A2A] rounded-xl py-4 px-6">
-                    <Text className="text-white text-center text-base font-bold">
-                      Exit Workout
-                    </Text>
-                  </View>
-                </Pressable>
-              </View>
+      {/* Pause Modal */}
+      {isPaused && (
+        <View
+          className="absolute inset-0 bg-black/80 items-center justify-center"
+          style={{ paddingTop: insets.top, paddingBottom: insets.bottom }}
+        >
+          <View
+            className="bg-[#1A1A1A] rounded-3xl mx-6 w-full max-w-md"
+            style={{ maxWidth: 400 }}
+          >
+            <View className="px-6 py-5 border-b border-gray-800">
+              <Text className="text-white text-xl font-bold">Paused</Text>
+            </View>
+            <View className="p-6">
+              <Text className="text-gray-400 text-center text-sm mb-6">
+                Watch a quick lesson for this combo
+              </Text>
+              <Pressable onPress={watchLesson} className="active:opacity-90 mb-3">
+                <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-red">
+                  <Text className="text-white text-center text-base font-bold">
+                    Watch lesson on YouTube
+                  </Text>
+                </View>
+              </Pressable>
+              <Pressable onPress={toggleRunning} className="active:opacity-90 mb-3">
+                <View className="bg-black rounded-xl py-4 px-6 border-2 border-boxing-gold">
+                  <Text className="text-white text-center text-base font-bold">
+                    Resume
+                  </Text>
+                </View>
+              </Pressable>
+              <Pressable onPress={endWorkout} className="active:opacity-80">
+                <View className="bg-[#2A2A2A] rounded-xl py-4 px-6">
+                  <Text className="text-white text-center text-base font-bold">
+                    Exit Workout
+                  </Text>
+                </View>
+              </Pressable>
             </View>
           </View>
-        )}
+        </View>
+      )}
+
+      <LevelUpModal
+        visible={showLevelUp && !!boxingLevel}
+        currentLevel={boxingLevel ?? "beginner"}
+        onAdvance={handleAdvance}
+        onStay={handleStay}
+      />
     </LinearGradient>
   );
 }

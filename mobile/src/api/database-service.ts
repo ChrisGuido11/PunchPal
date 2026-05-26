@@ -1,6 +1,14 @@
 import { supabase, isSupabaseEnabled } from "../lib/supabaseClient";
 import { TABLES } from "../lib/tables";
 import { BoxingLevel } from "../types/workout";
+import type { RatingOutcome } from "../lib/progression";
+import {
+  parse as parseCombo,
+  hasBodyShot,
+  hasEmbeddedDefense,
+  hasEmbeddedFootwork,
+  countPunches,
+} from "../lib/combo-variations";
 
 async function ensureAuthUserId(): Promise<string | null> {
   const { data: existing } = await supabase.auth.getSession();
@@ -27,6 +35,16 @@ export interface WorkoutSession {
   accuracy: number; // 0-100
   notes?: string;
   difficultyRating?: number; // 1 = too easy, 2 = just right, 3 = too hard
+  // C3 telemetry (migration 006). Captured at workout-generation time and
+  // written here so we can later query "how often does the generated workout
+  // include a struggle combo despite B1?", "did adaptive learning reduce
+  // recent-list collisions?", etc. Undefined for fallback workouts.
+  signalStruggleHitCount?: number;
+  signalSuccessHitCount?: number;
+  signalRecentHitCount?: number;
+  signalAtLevelCap?: boolean;
+  signalFeatureStruggles?: string[];
+  signalFeatureSuccesses?: string[];
 }
 
 export interface UserStats {
@@ -40,6 +58,11 @@ export interface UserStats {
   longestStreak: number;
   avgAccuracy: number;
   lastWorkoutDate: string | null;
+  // Progression v5 fields (added by migration 004).
+  levelCapStayingSince: string | null;
+  levelCapTooEasyCountSinceStay: number;
+  recentComboSignatures: string[];
+  demotionWindow: RatingOutcome[];
 }
 
 export interface ComboProgress {
@@ -51,6 +74,46 @@ export interface ComboProgress {
   timesCompleted: number;
   bestAccuracy: number;
   lastAttemptDate: string;
+}
+
+const VALID_OUTCOMES: ReadonlySet<RatingOutcome> = new Set<RatingOutcome>([
+  "too_easy",
+  "just_right",
+  "too_hard",
+  "skipped",
+  "early_exit",
+]);
+
+function sanitizeDemotionWindow(value: unknown): RatingOutcome[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((v): v is string => typeof v === "string")
+    .filter((v): v is RatingOutcome => VALID_OUTCOMES.has(v as RatingOutcome))
+    .slice(-5);
+}
+
+function sanitizeSignatures(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string").slice(0, 10);
+}
+
+function mapRowToStats(row: any): UserStats {
+  return {
+    userId: row.user_id,
+    totalWorkouts: row.total_workouts ?? 0,
+    totalMinutes: row.total_minutes ?? 0,
+    currentLevel: row.current_level,
+    nextLevelProgress: row.next_level_progress ?? 0,
+    combosLearned: row.combos_learned ?? 0,
+    currentStreak: row.current_streak ?? 0,
+    longestStreak: row.longest_streak ?? 0,
+    avgAccuracy: row.avg_accuracy ?? 0,
+    lastWorkoutDate: row.last_workout_date ?? null,
+    levelCapStayingSince: row.level_cap_staying_since ?? null,
+    levelCapTooEasyCountSinceStay: row.level_cap_too_easy_count_since_stay ?? 0,
+    recentComboSignatures: sanitizeSignatures(row.recent_combo_signatures),
+    demotionWindow: sanitizeDemotionWindow(row.demotion_window),
+  };
 }
 
 // Fetch user stats
@@ -66,32 +129,22 @@ export async function getUserStats(userId: string): Promise<UserStats | null> {
 
     if (error && error.code !== "PGRST116") throw error; // PGRST116 = no rows
     if (!data) return null;
-    
-    return {
-      userId: data.user_id,
-      totalWorkouts: data.total_workouts,
-      totalMinutes: data.total_minutes,
-      currentLevel: data.current_level,
-      nextLevelProgress: data.next_level_progress,
-      combosLearned: data.combos_learned,
-      currentStreak: data.current_streak,
-      longestStreak: data.longest_streak,
-      avgAccuracy: data.avg_accuracy,
-      lastWorkoutDate: data.last_workout_date,
-    };
+    return mapRowToStats(data);
   } catch (error) {
     console.error("Error fetching user stats:", error);
     return null;
   }
 }
 
-// Create or update user stats
+// Create or update user stats. Only fields explicitly provided in `stats` are
+// written — any undefined property is dropped, so callers can do partial
+// updates without clobbering existing values.
 export async function upsertUserStats(
   userId: string,
   stats: Partial<UserStats>
 ): Promise<UserStats | null> {
   if (!isSupabaseEnabled()) {
-    console.log('Supabase not enabled, skipping upsertUserStats');
+    console.log("Supabase not enabled, skipping upsertUserStats");
     return null;
   }
 
@@ -101,19 +154,22 @@ export async function upsertUserStats(
       console.error("upsertUserStats: no auth session available");
       return null;
     }
-    const dbRecord = {
-      user_id: authUserId,
-      total_workouts: stats.totalWorkouts,
-      total_minutes: stats.totalMinutes,
-      current_level: stats.currentLevel,
-      next_level_progress: stats.nextLevelProgress,
-      combos_learned: stats.combosLearned,
-      current_streak: stats.currentStreak,
-      longest_streak: stats.longestStreak,
-      avg_accuracy: stats.avgAccuracy,
-      last_workout_date: stats.lastWorkoutDate,
-    };
-    
+
+    const dbRecord: Record<string, unknown> = { user_id: authUserId };
+    if (stats.totalWorkouts !== undefined) dbRecord.total_workouts = stats.totalWorkouts;
+    if (stats.totalMinutes !== undefined) dbRecord.total_minutes = stats.totalMinutes;
+    if (stats.currentLevel !== undefined) dbRecord.current_level = stats.currentLevel;
+    if (stats.nextLevelProgress !== undefined) dbRecord.next_level_progress = stats.nextLevelProgress;
+    if (stats.combosLearned !== undefined) dbRecord.combos_learned = stats.combosLearned;
+    if (stats.currentStreak !== undefined) dbRecord.current_streak = stats.currentStreak;
+    if (stats.longestStreak !== undefined) dbRecord.longest_streak = stats.longestStreak;
+    if (stats.avgAccuracy !== undefined) dbRecord.avg_accuracy = stats.avgAccuracy;
+    if (stats.lastWorkoutDate !== undefined) dbRecord.last_workout_date = stats.lastWorkoutDate;
+    if (stats.levelCapStayingSince !== undefined) dbRecord.level_cap_staying_since = stats.levelCapStayingSince;
+    if (stats.levelCapTooEasyCountSinceStay !== undefined) dbRecord.level_cap_too_easy_count_since_stay = stats.levelCapTooEasyCountSinceStay;
+    if (stats.recentComboSignatures !== undefined) dbRecord.recent_combo_signatures = stats.recentComboSignatures;
+    if (stats.demotionWindow !== undefined) dbRecord.demotion_window = stats.demotionWindow;
+
     const { data, error } = await supabase
       .from(TABLES.userStats)
       .upsert(dbRecord, { onConflict: "user_id" })
@@ -121,22 +177,11 @@ export async function upsertUserStats(
       .single();
 
     if (error) {
-      console.error('Supabase upsert error:', error);
+      console.error("Supabase upsert error:", error);
       throw error;
     }
-    
-    return data ? {
-      userId: data.user_id,
-      totalWorkouts: data.total_workouts,
-      totalMinutes: data.total_minutes,
-      currentLevel: data.current_level,
-      nextLevelProgress: data.next_level_progress,
-      combosLearned: data.combos_learned,
-      currentStreak: data.current_streak,
-      longestStreak: data.longest_streak,
-      avgAccuracy: data.avg_accuracy,
-      lastWorkoutDate: data.last_workout_date,
-    } : null;
+
+    return data ? mapRowToStats(data) : null;
   } catch (error) {
     console.error("Error upserting user stats:", error);
     return null;
@@ -168,6 +213,16 @@ export async function logWorkoutSession(
       accuracy: session.accuracy,
       notes: session.notes,
       difficulty_rating: session.difficultyRating,
+      // C3 telemetry — only included when migration 006 has been applied. Older
+      // DBs will reject these columns; the catch below logs and silently drops
+      // the insert. Acceptable: telemetry is best-effort, the user's rating
+      // path remains in TimerScreen regardless.
+      signal_struggle_hit_count: session.signalStruggleHitCount,
+      signal_success_hit_count: session.signalSuccessHitCount,
+      signal_recent_hit_count: session.signalRecentHitCount,
+      signal_at_level_cap: session.signalAtLevelCap,
+      signal_feature_struggles: session.signalFeatureStruggles,
+      signal_feature_successes: session.signalFeatureSuccesses,
     };
 
     const { data, error } = await supabase
@@ -315,47 +370,6 @@ export async function updateComboProgress(
   }
 }
 
-// Calculate if user should level up
-export async function evaluateLevelUp(userId: string): Promise<BoxingLevel | null> {
-  if (!isSupabaseEnabled()) return null;
-
-  try {
-    const stats = await getUserStats(userId);
-    if (!stats) return null;
-
-    const { data: sessions } = await supabase
-      .from(TABLES.workoutSessions)
-      .select("accuracy, difficulty")
-      .eq("user_id", userId)
-      .order("completed_at", { ascending: false })
-      .limit(10);
-
-    if (!sessions || sessions.length === 0) return null;
-
-    // Level up logic
-    const currentLevel = stats.currentLevel;
-    const recentAvgAccuracy =
-      sessions.reduce((sum: number, s: any) => sum + (s.accuracy || 0), 0) / sessions.length;
-    const recentSessionsAtLevel = sessions.filter((s: any) => s.difficulty === currentLevel);
-
-    // If last 5+ sessions at current level with 80%+ average accuracy, level up
-    if (recentSessionsAtLevel.length >= 5 && recentAvgAccuracy >= 80) {
-      const nextLevel: Record<BoxingLevel, BoxingLevel> = {
-        beginner: "intermediate",
-        intermediate: "advanced",
-        advanced: "advanced", // Stay at advanced
-      };
-
-      return nextLevel[currentLevel];
-    }
-
-    return null;
-  } catch (error) {
-    console.error("Error evaluating level up:", error);
-    return null;
-  }
-}
-
 // Get combo recommendations based on progress
 export async function getComboRecommendations(userId: string): Promise<string[]> {
   if (!isSupabaseEnabled()) return [];
@@ -373,5 +387,203 @@ export async function getComboRecommendations(userId: string): Promise<string[]>
   } catch (error) {
     console.error("Error getting combo recommendations:", error);
     return [];
+  }
+}
+
+// =============================================================================
+// Adaptive learning (Phase 4.1, 2026-05-24)
+//
+// Workout difficulty ratings (1=too easy, 2=just right, 3=too hard) accumulate
+// per anchor combo in `punchpal_combo_progress`. The EF prompt uses these to
+// avoid patterns the user has rated TOO HARD and lean into patterns rated
+// JUST RIGHT or TOO EASY.
+// =============================================================================
+
+export type ComboDifficultySignal = {
+  struggles: string[]; // notations the user has rated TOO HARD more than well
+  successes: string[]; // notations the user has rated well repeatedly
+};
+
+// Feature-level difficulty signal. Aggregates per-combo ratings across all
+// combos sharing a feature (embedded defense, embedded footwork, body shot,
+// 4+ punches). Tells Claude "user struggles with body shots in general" —
+// far more actionable than the per-notation avoid list, since Claude can
+// pattern-match across combos it hasn't seen yet.
+export type FeatureDifficultySignal = {
+  embeddedDefenseStruggle: boolean;
+  embeddedFootworkStruggle: boolean;
+  bodyShotStruggle: boolean;
+  fourPlusPunchStruggle: boolean;
+  embeddedDefenseSuccess: boolean;
+  embeddedFootworkSuccess: boolean;
+  bodyShotSuccess: boolean;
+  fourPlusPunchSuccess: boolean;
+};
+
+const EMPTY_FEATURE_SIGNAL: FeatureDifficultySignal = {
+  embeddedDefenseStruggle: false,
+  embeddedFootworkStruggle: false,
+  bodyShotStruggle: false,
+  fourPlusPunchStruggle: false,
+  embeddedDefenseSuccess: false,
+  embeddedFootworkSuccess: false,
+  bodyShotSuccess: false,
+  fourPlusPunchSuccess: false,
+};
+
+// Records one row per anchor combo from a completed workout. Best-effort:
+// fires the RPCs and logs errors but never throws — telemetry must not block
+// the user-facing post-workout flow.
+export async function recordComboProgressForSession(
+  userId: string,
+  anchors: { notation: string; name?: string }[],
+  difficultyRating: 1 | 2 | 3
+): Promise<void> {
+  if (!isSupabaseEnabled() || anchors.length === 0) return;
+
+  await Promise.all(
+    anchors.map(async (a) => {
+      const { error } = await supabase.rpc("punchpal_record_combo_rating", {
+        p_user_id: userId,
+        p_notation: a.notation,
+        p_name: a.name ?? null,
+        p_rating: difficultyRating,
+      });
+      if (error) {
+        console.warn(
+          "[telemetry] punchpal_record_combo_rating failed for",
+          a.notation,
+          error.message
+        );
+      }
+    })
+  );
+}
+
+// Pulls the last 30 rated combos for the user and partitions them into
+// struggle vs success buckets. Caps each list at 8 entries to bound the EF
+// prompt cost. Returns empty arrays on any error (silent degradation).
+export async function getComboDifficultySignal(
+  userId: string
+): Promise<ComboDifficultySignal> {
+  if (!isSupabaseEnabled()) return { struggles: [], successes: [] };
+
+  try {
+    const { data, error } = await supabase
+      .from(TABLES.comboProgress)
+      .select(
+        "combo_notation, too_easy_count, just_right_count, too_hard_count, last_attempt_date"
+      )
+      .eq("user_id", userId)
+      .gte("times_attempted", 1)
+      .order("last_attempt_date", { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+
+    const struggles: string[] = [];
+    const successes: string[] = [];
+
+    // Classification thresholds bumped from single-data-point (tooHard ≥1) to
+    // multi-data-point (tooHard ≥2, success ≥3). Single ratings produced noisy
+    // oscillating signal — every first "too hard" flagged a combo as struggle.
+    for (const row of data ?? []) {
+      const tooHard = row.too_hard_count ?? 0;
+      const justRight = row.just_right_count ?? 0;
+      const tooEasy = row.too_easy_count ?? 0;
+      const wellHandled = justRight + tooEasy;
+
+      if (tooHard >= 2 && tooHard > wellHandled) {
+        if (struggles.length < 8) struggles.push(row.combo_notation);
+      } else if (wellHandled >= 3 && tooHard <= 1) {
+        if (successes.length < 8) successes.push(row.combo_notation);
+      }
+    }
+
+    return { struggles, successes };
+  } catch (error) {
+    console.warn("[telemetry] getComboDifficultySignal failed:", error);
+    return { struggles: [], successes: [] };
+  }
+}
+
+// Aggregates rating counts across the user's full combo history (last 100)
+// by feature: embedded defense, embedded footwork, body shots, 4+ punches.
+// Returns booleans per feature for struggle (≥3 too-hards exceeding well-rated)
+// and success (≥5 well-rated with ≤2 too-hards). Higher thresholds than the
+// notation-level signal because feature-level rolls up many combos — needs more
+// evidence to assert "user struggles with this whole category".
+export async function getFeatureDifficultySignal(
+  userId: string
+): Promise<FeatureDifficultySignal> {
+  if (!isSupabaseEnabled()) return EMPTY_FEATURE_SIGNAL;
+
+  try {
+    const { data, error } = await supabase
+      .from(TABLES.comboProgress)
+      .select(
+        "combo_notation, too_easy_count, just_right_count, too_hard_count, last_attempt_date"
+      )
+      .eq("user_id", userId)
+      .gte("times_attempted", 1)
+      .order("last_attempt_date", { ascending: false })
+      .limit(100);
+
+    if (error) throw error;
+
+    type Counts = { tooHard: number; wellHandled: number };
+    const f = {
+      embeddedDefense: { tooHard: 0, wellHandled: 0 } as Counts,
+      embeddedFootwork: { tooHard: 0, wellHandled: 0 } as Counts,
+      bodyShot: { tooHard: 0, wellHandled: 0 } as Counts,
+      fourPlusPunch: { tooHard: 0, wellHandled: 0 } as Counts,
+    };
+
+    for (const row of data ?? []) {
+      let tokens;
+      try {
+        tokens = parseCombo(row.combo_notation);
+      } catch {
+        continue;
+      }
+      const tooHard = row.too_hard_count ?? 0;
+      const justRight = row.just_right_count ?? 0;
+      const tooEasy = row.too_easy_count ?? 0;
+      const wellHandled = justRight + tooEasy;
+
+      if (hasEmbeddedDefense(tokens)) {
+        f.embeddedDefense.tooHard += tooHard;
+        f.embeddedDefense.wellHandled += wellHandled;
+      }
+      if (hasEmbeddedFootwork(tokens)) {
+        f.embeddedFootwork.tooHard += tooHard;
+        f.embeddedFootwork.wellHandled += wellHandled;
+      }
+      if (hasBodyShot(tokens)) {
+        f.bodyShot.tooHard += tooHard;
+        f.bodyShot.wellHandled += wellHandled;
+      }
+      if (countPunches(tokens) >= 4) {
+        f.fourPlusPunch.tooHard += tooHard;
+        f.fourPlusPunch.wellHandled += wellHandled;
+      }
+    }
+
+    const isStruggle = (c: Counts) => c.tooHard >= 3 && c.tooHard > c.wellHandled;
+    const isSuccess = (c: Counts) => c.wellHandled >= 5 && c.tooHard <= 2;
+
+    return {
+      embeddedDefenseStruggle: isStruggle(f.embeddedDefense),
+      embeddedFootworkStruggle: isStruggle(f.embeddedFootwork),
+      bodyShotStruggle: isStruggle(f.bodyShot),
+      fourPlusPunchStruggle: isStruggle(f.fourPlusPunch),
+      embeddedDefenseSuccess: isSuccess(f.embeddedDefense),
+      embeddedFootworkSuccess: isSuccess(f.embeddedFootwork),
+      bodyShotSuccess: isSuccess(f.bodyShot),
+      fourPlusPunchSuccess: isSuccess(f.fourPlusPunch),
+    };
+  } catch (error) {
+    console.warn("[telemetry] getFeatureDifficultySignal failed:", error);
+    return EMPTY_FEATURE_SIGNAL;
   }
 }

@@ -50,35 +50,35 @@ export default function WorkoutCard({
         </View>
 
         <View className="bg-boxing-cardBg border-2 border-boxing-red rounded-3xl overflow-hidden">
-          <View className="p-6">
-            <View className="mb-5">
+          <View className="p-5">
+            <View className="mb-3">
               <Text
-                className={`text-xs font-bold tracking-widest mb-2 ${difficultyColor}`}
+                className={`text-xs font-bold tracking-widest mb-1 ${difficultyColor}`}
               >
                 {workout.difficulty.toUpperCase()}
               </Text>
               <Text
-                className="text-3xl font-black text-white mb-1"
+                className="text-3xl font-black text-white mb-0.5"
                 numberOfLines={1}
                 adjustsFontSizeToFit
               >
                 {workout.name.split(":")[0]}:
               </Text>
-              <Text className="text-xl font-bold text-gray-200">
+              <Text className="text-lg font-bold text-gray-200">
                 {workout.name.split(":").slice(1).join(":").trim()}
               </Text>
             </View>
 
-            <View className="flex-row justify-center space-x-3 mb-5">
+            <View className="flex-row justify-center space-x-3 mb-3">
               <View
-                className="bg-black/30 rounded-xl py-3 items-center"
+                className="bg-black/30 rounded-xl py-2 items-center"
                 style={{ width: 120 }}
               >
                 <Text className="text-gray-400 text-[10px] mb-0.5 uppercase tracking-wider">
                   Duration
                 </Text>
                 <Text
-                  className="text-white text-2xl font-bold"
+                  className="text-white text-xl font-bold"
                   numberOfLines={1}
                   adjustsFontSizeToFit
                 >
@@ -87,14 +87,14 @@ export default function WorkoutCard({
               </View>
 
               <View
-                className="bg-black/30 rounded-xl py-3 items-center"
+                className="bg-black/30 rounded-xl py-2 items-center"
                 style={{ width: 120 }}
               >
                 <Text className="text-gray-400 text-[10px] mb-0.5 uppercase tracking-wider">
                   Rounds
                 </Text>
-                <Text className="text-white text-2xl font-bold">
-                  {workout.rounds}
+                <Text className="text-white text-xl font-bold">
+                  {workout.rounds.length}
                 </Text>
               </View>
             </View>
@@ -103,12 +103,12 @@ export default function WorkoutCard({
               <View
                 style={{
                   backgroundColor: "#000000",
-                  paddingVertical: 18,
+                  paddingVertical: 14,
                   paddingHorizontal: 32,
                   borderRadius: 16,
                 }}
               >
-                <Text className="text-white text-xl font-bold text-center">
+                <Text className="text-white text-lg font-bold text-center">
                   Start Training
                 </Text>
               </View>

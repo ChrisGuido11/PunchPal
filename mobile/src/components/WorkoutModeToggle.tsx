@@ -33,22 +33,27 @@ function Segment({ label, active, onPress }: SegmentProps) {
 }
 
 const HELPER_COPY: Record<WorkoutMode, string> = {
-  classic: "Classic — one combo for the whole round",
-  dynamic: "Dynamic — combos rotate within each round",
+  classic: "Classic — one combo with form coaching",
+  dynamic: "Dynamic — combos rotate, simulates pad work",
 };
 
-export default function WorkoutModeToggle() {
+type Props = {
+  disabled?: boolean;
+};
+
+export default function WorkoutModeToggle({ disabled = false }: Props) {
   const workoutMode = useUserStore((s) => s.workoutMode);
   const setWorkoutMode = useUserStore((s) => s.setWorkoutMode);
 
   const handleSelect = (mode: WorkoutMode) => {
+    if (disabled) return;
     if (mode === workoutMode) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setWorkoutMode(mode);
   };
 
   return (
-    <View className="mx-6 mt-3 mb-3">
+    <View className="mx-6 mt-2 mb-2" style={{ opacity: disabled ? 0.5 : 1 }}>
       <View className="flex-row rounded-lg border border-boxing-cardBorder overflow-hidden">
         <Segment
           label="Classic"
@@ -62,8 +67,8 @@ export default function WorkoutModeToggle() {
         />
       </View>
       <Text
-        className="text-white/60 mt-2 text-center"
-        style={{ fontSize: 12 }}
+        className="text-white/60 mt-1 text-center"
+        style={{ fontSize: 11 }}
         numberOfLines={1}
       >
         {HELPER_COPY[workoutMode]}
