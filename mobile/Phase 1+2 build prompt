@@ -1,0 +1,404 @@
+# PunchPal Phase 1+2 — Dynamic Mode + Embedded Tokens + Progression System
+
+**Hand this entire file to Claude Code in the `mobile/` directory of the PunchPal repo. Do not summarize or paraphrase before pasting.**
+
+---
+
+## Context
+
+PunchPal v1.1.0 currently calls ONE pure-punch combo per round for 3 minutes and never advances users automatically. We're shipping a combined Phase 1+2 release that introduces:
+
+- **Two coaching modes** on the Home screen: **Classic** (teaching, single combo with form reminders) and **Dynamic** (drilling, rotating combos with constant 4-second silent gap between combos).
+- **Embedded defense, footwork, and feints in combo notation**, scaled by tier (Beginner: pure punches, Intermediate: light embedding, Advanced: heavy embedding). All defense/footwork tokens are directional. Feints are gated to Intermediate+.
+- **Rating-driven progression** that actually advances users — within-level automatic via points, cross-level user-agency via celebration modal with Stay/Advance choice.
+- **Demotion safety net** if a user advances and the next 5 ratings show they're not ready.
+- **Cap-state variety** so users who choose to Stay at level cap get fresh workouts (variety signal + combo-pattern rotation).
+
+The authoritative spec is `SHADOW_BOXING_TEARDOWN_v5.md` in the repo root. **Read it before planning.** The key sections are §5 (mode behavior), §6 (progression system), §7 (notation format).
+
+---
+
+## Workflow (per `CLAUDE.md`)
+
+1. **Enter Plan Mode first.** Write the implementation plan to `tasks/todo.md` with checkable items before writing any code. Wait for explicit approval to start coding.
+2. **Read `SHADOW_BOXING_TEARDOWN_v5.md` first.** It is the source of truth for all numeric values, the notation grammar, the scheduler design, and the progression points table.
+3. **Build in this order:** schema migration → notation library (parse / serialize / expand / variations) → progression points logic → Edge Function rewrite → TimerScreen rewrite (Classic branch first, then Dynamic) → HomeScreen mode toggle → celebration modal → Profile demotion hint.
+4. **Update `tasks/lessons.md`** with any corrections during the session.
+5. **End with a Review section in `tasks/todo.md`** summarizing what shipped.
+
+Do not bump `version` or `versionCode`. EAS handles those.
+
+---
+
+## Scope — Eight Deliverables
+
+### Deliverable 1: Database schema migration
+
+New columns on `punchpal_user_stats`:
+
+```sql
+ALTER TABLE punchpal_user_stats
+  ADD COLUMN level_cap_staying_since timestamptz NULL,
+  ADD COLUMN level_cap_too_easy_count_since_stay int NOT NULL DEFAULT 0,
+  ADD COLUMN recent_combo_signatures jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN demotion_window jsonb NOT NULL DEFAULT '[]'::jsonb;
+```
+
+Apply via a temp Edge Function (per the established PunchPal pattern — `supabase db push` is blocked by sibling apps' migrations on the shared project). Create `mobile/supabase/functions/punchpal-migration-004/index.ts` that opens a postgres connection using `SUPABASE_DB_URL`, runs the ALTER TABLE idempotently (use `ADD COLUMN IF NOT EXISTS`), returns the result. Deploy, invoke once, then delete the function.
+
+Also add a migration file `mobile/supabase/migrations/004_progression_columns.sql` for the historical record.
+
+### Deliverable 2: Mobile notation library (`mobile/src/lib/combo-variations.ts`)
+
+New file. Public API:
+
+```ts
+export type ComboNotation = string;
+
+export type Token =
+  | { kind: 'punch'; number: 1 | 2 | 3 | 4 | 5 | 6; body: boolean }
+  | { kind: 'defense'; move: 'slip_left' | 'slip_right' | 'roll_left' | 'roll_right' | 'block_left' | 'block_right' | 'parry_left' | 'parry_right' }
+  | { kind: 'footwork'; move: 'pivot_left' | 'pivot_right' | 'step_back' | 'step_in' | 'shuffle_left' | 'shuffle_right' }
+  | { kind: 'feint'; move: 'feint_jab' | 'feint_cross' | 'feint_hook' | 'feint_uppercut' | 'feint_high' | 'feint_low' };
+
+export type Tier = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+
+export function parse(notation: ComboNotation): Token[];
+export function serialize(tokens: Token[]): ComboNotation;
+export function expandForSpeech(notation: ComboNotation): string;
+export function estimateSpeechDuration(expandedSpeech: string, platform: 'ios' | 'android'): number;
+export function generateVariations(anchor: ComboNotation, count: number, tier: Tier): ComboNotation[];
+export function hashCombo(notation: ComboNotation): string;
+```
+
+**`parse` requirements:**
+- Validates per the grammar in v5 §7.1.
+- Enforces §7.3 constraints (must end with punch, no consecutive non-punch tokens, ≤3 non-punch tokens, ≤8 total tokens).
+- Throws with a descriptive error on invalid notation.
+- Handles legacy v1 notations (pure punches with `b` suffix, no embedded moves) without error.
+
+**`expandForSpeech` requirements:**
+- Per v5 §5.5. Numbers → words, `b` suffix → " to the body", defense/footwork/feint tokens → space-separated phrases, joined with ", ".
+- Example: `1-2-slip_right-3` → `"one, two, slip right, three"`.
+- Example: `feint_jab-2-3` → `"feint jab, two, three"`.
+
+**`estimateSpeechDuration` requirements:**
+- Returns milliseconds.
+- Algorithm: count words in expanded speech (treat commas as word boundaries), multiply by ms-per-word (400ms iOS, 435ms Android), add 300ms startup buffer.
+- Clamp to range [1000ms, 8000ms].
+
+**`generateVariations` requirements:**
+- Per v5 §7.4. Deterministic (seeded by `anchor` string).
+- Variations preserve at least one embedded move from the anchor when present.
+- Variations may not introduce moves above the user's tier:
+  - tier 1-3 → variations contain ONLY punches.
+  - tier 4-6 → variations may contain defense/footwork/feints but at most 2 non-punch tokens total per variation.
+  - tier 7-9 → variations may use up to 3 non-punch tokens per variation.
+- Returns up to `count` unique variations; if fewer are possible, returns however many it can generate (never duplicates).
+
+**`hashCombo` requirements:**
+- Returns a short stable string (e.g., first 8 chars of SHA-1) of the canonicalized notation.
+- Canonicalize by parsing and re-serializing.
+
+**Tests** in `mobile/src/lib/__tests__/combo-variations.test.ts`:
+- `parse` validates all grammar branches and rejects all §7.3 violations.
+- `parse` round-trips with `serialize`.
+- `expandForSpeech` handles all token types correctly.
+- `estimateSpeechDuration` returns reasonable values for sample combos.
+- `generateVariations` is deterministic across runs.
+- Tier respect: beginner variations contain no embedded moves; intermediate variations don't exceed 2 non-punch tokens; advanced may have 3.
+- Hash is stable across equivalent notations.
+- Edge cases: 1-punch anchor, anchor with maximum embedded moves, anchor with all token kinds.
+
+### Deliverable 3: Progression points logic (`mobile/src/lib/progression.ts`)
+
+New file. Public API:
+
+```ts
+export type RatingOutcome = 'too_easy' | 'just_right' | 'too_hard' | 'skipped' | 'early_exit';
+
+export function pointsForOutcome(outcome: RatingOutcome): number;
+
+export interface ProgressionInput {
+  currentLevel: 'beginner' | 'intermediate' | 'advanced';
+  currentProgress: number;
+  outcome: RatingOutcome;
+  levelCapStayingSince: number | null;
+  levelCapTooEasyCountSinceStay: number;
+  demotionWindow: RatingOutcome[];
+}
+
+export interface ProgressionResult {
+  newProgress: number;
+  shouldShowCelebration: boolean;
+  shouldShowDemotionHint: boolean;
+  newLevelIfAdvancing: 'intermediate' | 'advanced' | null;
+  newLevelCapTooEasyCount: number;
+  newDemotionWindow: RatingOutcome[];
+}
+
+export function computeProgression(input: ProgressionInput): ProgressionResult;
+```
+
+**Point values (per v5 §6.2):**
+- `too_easy` → +15
+- `just_right` → +10
+- `too_hard` → +5
+- `skipped` → +8
+- `early_exit` → +2
+
+**Logic:**
+- Add points to `currentProgress` → `newProgress`.
+- If user is at level cap (`levelCapStayingSince !== null`) and outcome is `too_easy`, increment `newLevelCapTooEasyCount` (cap at 3).
+- If `newProgress >= 100` AND `currentLevel !== 'advanced'`:
+  - If `levelCapStayingSince !== null` AND `newLevelCapTooEasyCount < 3` → don't show celebration; user is Staying.
+  - Else → `shouldShowCelebration: true`, `newLevelIfAdvancing: <next level>`.
+- Update demotion window: append the new outcome, keep last 5 entries. If `currentLevel !== 'beginner'` AND ≥3 of the last 5 are `too_hard` → `shouldShowDemotionHint: true`.
+- Advanced + progress=100 case: cap at 100, no celebration ever.
+
+**Called from:**
+- `TimerScreen.finishWorkout` (rated path)
+- `TimerScreen.exitToHome` (early-exit path, outcome=`early_exit`)
+
+Both must call `computeProgression` BEFORE `logWorkoutSession` so user_stats reflects the new state.
+
+**Tests** in `mobile/src/lib/__tests__/progression.test.ts`:
+- All point values match the table.
+- Staying user gets re-prompt after 3 `too_easy` ratings.
+- Advanced user never gets celebration.
+- Demotion window: 3 `too_hard` in last 5 triggers hint; 2 doesn't.
+- Edge cases: progress already at 100, brand-new user at progress=0.
+
+### Deliverable 4: Edge Function rewrite (`punchpal-generate-workout`)
+
+Update `mobile/supabase/functions/punchpal-generate-workout/index.ts` to:
+
+**Accept new input fields:**
+- `mode: 'classic' | 'dynamic'`
+- `at_level_cap: boolean`
+- `level_cap_too_easy_count_since_stay: number`
+- `recent_combo_signatures: string[]` (last 10 hashes the user has seen)
+
+**Return new schema (schema_version: 2)** per v5 §7.5.
+
+**Prompt updates (system + user prompts):**
+
+- Teach Claude the extended notation grammar from v5 §7. Defense tokens (8 directional): `slip_left/slip_right/roll_left/roll_right/block_left/block_right/parry_left/parry_right`. Footwork tokens (6 directional): `pivot_left/pivot_right/step_back/step_in/shuffle_left/shuffle_right`. Feint tokens (6, intermediate+): `feint_jab/feint_cross/feint_hook/feint_uppercut/feint_high/feint_low`.
+- Instruct: "Beginner tier (T1-T3) combos contain ONLY punches with optional `b` suffix. Intermediate (T4-T6) and Advanced (T7-T9) combos may use defense, footwork, and feint tokens."
+- Instruct: "Combos must END with a punch token. Non-punch tokens may NOT appear consecutively — there must be a punch between any two non-punch tokens. Total tokens ≤ 8. Non-punch tokens per combo ≤ 3."
+- Instruct: "Pre-expand notation into `expanded_speech` using these rules: digits → 'one'..'six', `b` suffix → ' to the body', token names like `slip_left` → 'slip left', `feint_jab` → 'feint jab'. Join tokens with ', '."
+- For Classic mode: "Generate a 10–12 second `classic_description` that explains the combo's purpose, key technique points, and what defense/footwork to maintain. Generate `classic_reminders` with counts based on tier: 2–3 for beginner, 3–5 for intermediate, 4–6 for advanced. Each reminder ≤ 4 words. Never repeat the same cue twice in a round. Mix categories: form / punch_correction / tempo."
+- For Dynamic mode: "Generate ONE strong `anchor_combo` per round at the appropriate tier complexity. The client will generate variations. `classic_description` should be an empty string and `classic_reminders` an empty array."
+- When `at_level_cap: true`, append: "User is at the cap of their current level and has chosen to Stay. Prioritize variety and surprise. Avoid the combo signatures in `recent_combo_signatures`. Use creative workout names. Pull from edge-case combinations within the current level's vocabulary."
+- **Add this line for advanced combos with shuffles:** "When using `shuffle_left` or `shuffle_right` in advanced combos, draw inspiration from Lomachenko's signature lateral movement — shuffle to an angle, then punch from the new position. This is different from a pivot (which rotates the stance) and from a step (which is more committed)."
+
+**Server-side validation:**
+- Parse each combo's `notation` using the same grammar as the mobile parser. Reject and regenerate any combo that violates §7.3.
+- Verify Claude's `expanded_speech` matches the deterministic expander output. If mismatch, overwrite with the correct expansion.
+- Reject any beginner-tier combo containing non-punch tokens.
+
+### Deliverable 5: Zustand store updates (`mobile/src/state/userStore.ts`)
+
+Add fields:
+
+```ts
+workoutMode: 'classic' | 'dynamic';
+workoutModeMigratedAt: number | null;
+levelCapStayingSince: number | null;
+levelCapTooEasyCountSinceStay: number;
+demotionWindow: RatingOutcome[];
+```
+
+All AsyncStorage-persisted alongside existing store state.
+
+**Migration logic** (runs once on store hydration):
+- If `workoutModeMigratedAt === null`:
+  - If `hasCompletedOnboarding === true` (existing user) → `workoutMode = 'classic'`.
+  - Else (new user) → `workoutMode = 'dynamic'`.
+  - Stamp `workoutModeMigratedAt = Date.now()`.
+
+### Deliverable 6: TimerScreen rewrite (`mobile/src/screens/TimerScreen.tsx`)
+
+The biggest deliverable. Branch on `workoutMode`:
+
+**Classic mode (absolute-wall-clock scheduling, unchanged in spirit from v1):**
+
+1. Round start: bell.mp3, immediately `Speech.speak(anchor_combo.expanded_speech)`.
+2. At t=5s (after combo speech finishes): `Speech.speak(classic_description)`.
+3. Distribute `classic_reminders` evenly across window t=30..t=160: divide that 130s window by `(reminders.length + 1)` and place reminders at the resulting intervals (rounded to nearest second).
+4. At t=170s: bell.mp3 (10s warning) + Speech.speak("ten seconds").
+5. At t=180s: bell.mp3 (end of round).
+
+**Dynamic mode (gap-based hybrid scheduler, per v5 §5.9):**
+
+1. Round start: bell.mp3, then immediately fire the anchor combo. No intro speech.
+2. After firing each combo (anchor or variation):
+   - Compute `estimatedDuration = estimateSpeechDuration(combo.expanded_speech, platform)`.
+   - Call `Speech.speak(combo.expanded_speech, { onDone: handleOnDone })`.
+   - Set a **primary timer** via `setTimeout(estimatedDuration + 4000)` to fire the next combo. Save the timer handle.
+   - When `Speech.onDone` fires:
+     - If it fires BEFORE the primary timer's scheduled time: do nothing. Primary timer fires on schedule. (Gap is slightly longer than 4s — fine.)
+     - If it fires AFTER the primary timer's scheduled time: cancel the primary timer and reschedule for `(now + 4000)`.
+   - If `Speech.onDone` never fires (Android failure), the primary timer fires regardless. Round never stalls.
+3. Determine how many combo calls fit in the round at advanced complexity using `estimateSpeechDuration` + 4s gap per combo. Cap at 20 for safety.
+4. Generate variations via `generateVariations(anchor.notation, calls - 1, tier)`. Combine: `[anchor, ...variations]`.
+5. **Anchor reannouncements:** the variation slot whose scheduled fire-time is closest to t=90s gets replaced by the anchor. Same for closest to t=153s.
+6. Continue firing combos via the gap-based loop until t≥165s. Then stop scheduling new combos.
+7. At t=170s: bell.mp3 (10s warning) + Speech.speak("ten seconds").
+8. At t=180s: bell.mp3 (end of round).
+
+**Shared rules:**
+- `Speech.stop()` is called at round start, on pause, on round end, on mode-transition — NOT before each individual utterance.
+- A separate 250ms `setInterval` ticker drives the visible countdown.
+- Pause: `Speech.stop()`, record `pausedAt`, clear all pending timeouts. Resume: add `(Date.now() - pausedAt)` to `pausedAccumMs`. For Dynamic mode, re-fire the currently-paused combo from the start. For Classic mode, resume schedule from where it left off.
+- `AppState` listener recomputes the schedule on foreground.
+- Combo card animates on each TTS fire moment (scale up + brief red border pulse).
+
+**On round complete (`finishWorkout`):**
+1. Show rating modal as today.
+2. On rating submit (or skip): compute `outcome` from rating, then call `computeProgression(...)`.
+3. Update Zustand and Supabase with the new progression state via `upsertUserStats`.
+4. Append the just-played anchor's hash to `recent_combo_signatures` (truncate to last 10).
+5. If `shouldShowCelebration`: show celebration modal (Deliverable 7).
+6. Otherwise proceed to existing post-workout interstitial + navigation.
+
+**On early exit (`exitToHome` from pause modal):**
+1. Show rating modal (existing behavior).
+2. On submit/skip: compute `outcome` as `early_exit` regardless of rating choice.
+3. Call `computeProgression`, update store + Supabase.
+4. No celebration modal on early exit, even if `shouldShowCelebration` is true (UX guardrail).
+5. Don't increment `workoutHistory` (existing rule).
+
+### Deliverable 7: Celebration modal (`mobile/src/components/LevelUpModal.tsx`)
+
+New component. Renders inside TimerScreen on workout complete when `shouldShowCelebration === true`.
+
+**Content:**
+- Headline: `You've mastered Beginner.` (or Intermediate)
+- Subhead: `Ready for Intermediate?` (or Advanced)
+- Two buttons (vertical stack):
+  - Primary: `Advance to Intermediate` — `#DC2626` filled.
+  - Secondary: `Stay at Beginner` — outlined, muted.
+- Success haptic on mount.
+
+**On Advance tap:**
+- Update Zustand: set `boxingLevel` to new level, set `nextLevelProgress` to `(currentProgress - 100)` (carry overflow), clear `levelCapStayingSince`, clear `levelCapTooEasyCountSinceStay`, clear `demotionWindow`.
+- Persist to Supabase via `upsertUserStats`.
+- Fire `level_up_inter` or `level_up_advanced` achievement (wire up the dead achievement triggers in `achievements.ts`).
+- Celebration animation (scale pulse on the achievement icon).
+- Close modal, proceed to post-workout interstitial.
+
+**On Stay tap:**
+- Update Zustand: pin `nextLevelProgress` at 100, set `levelCapStayingSince = Date.now()`, reset `levelCapTooEasyCountSinceStay` to 0.
+- Persist to Supabase.
+- Close modal, proceed to post-workout interstitial.
+
+### Deliverable 8: HomeScreen toggle + Profile demotion hint
+
+**HomeScreen (`mobile/src/screens/HomeScreen.tsx`):**
+
+Add a segmented control between StreakCard and WorkoutCard. Per v5 §5.11:
+- Height: 36pt
+- Corner radius: 8pt
+- Border: 1px `#2A2A2A`
+- Two segments equal width: `CLASSIC` | `DYNAMIC`
+- Active: filled `#DC2626`, white bold uppercase, tracking-wider
+- Inactive: transparent, `rgba(255,255,255,0.65)` text
+- Light haptic on tap
+
+Descriptive line below (12pt muted):
+- Classic: `Classic — one combo with form coaching`
+- Dynamic: `Dynamic — combos rotate, real pad work`
+
+Persist to `workoutMode` in Zustand. Tapping doesn't regenerate a workout — only affects the next round when Start is tapped.
+
+**Profile (`mobile/src/screens/ProfileScreen.tsx`):**
+
+Add the demotion hint card. Renders only when `demotionWindow` contains ≥3 `too_hard` ratings in the most recent 5 entries AND `currentLevel !== 'beginner'`:
+
+- Card style matching existing Profile sections.
+- Text: `Based on your recent ratings, you might prefer <previous level>.`
+- Single button: `Drop back to <previous level>` — `#D4AF37` (Boxing Gold) filled, dark text.
+- On tap: revert level, reset `nextLevelProgress` to 0, clear `levelCapStayingSince`, clear `levelCapTooEasyCountSinceStay`, clear `demotionWindow`. Persist. Toast: `Level updated.`
+- Card disappears once the window no longer has 3+ `too_hard`.
+
+The existing manual level selector remains. Manual change resets all progression state (per v5 §6.7).
+
+---
+
+## Existing Code to Remove (per the audit)
+
+- `database-service.ts:319 evaluateLevelUp()` — delete entirely.
+- `user-service.ts:69` syncUserStats — remove the hardcoded `nextLevelProgress: 0` reset.
+- `HomeScreen.tsx:70` static formula `Math.round(workoutHistory.length / threshold * 100)` — delete.
+- `user-service.ts:93 getRecommendedLevel()` — delete or repurpose (the demotion hint lives in `progression.ts` now).
+- Existing `formatNotationForSpeech` helper in TimerScreen — delete, replaced by `expandForSpeech` from the new library.
+
+---
+
+## Memory of Existing Conventions
+
+- Styling: **NativeWind v4 className only**. No inline styles, no StyleSheet.create.
+- State: **Zustand with AsyncStorage persistence** — see `mobile/src/state/userStore.ts`.
+- Supabase table names: from `mobile/src/lib/tables.ts` `TABLES` constant.
+- Haptics on every meaningful tap.
+- The user is **Windows-only**. Do NOT suggest Xcode commands, Mac flows, or Apple Devices console.
+- No emojis anywhere — UI, comments, commit messages.
+- Edge Function deploys via `supabase functions deploy <name> --project-ref zeskhorwddxyjhhnpgsa`.
+
+---
+
+## Verification Before Marking Done
+
+1. `npx tsc --noEmit` from `mobile/` — zero errors.
+2. `combo-variations.test.ts` and `progression.test.ts` — all green.
+3. Migration applied via temp EF. Four new columns exist on `punchpal_user_stats`.
+4. Updated Edge Function deployed and returns `schema_version: 2`.
+5. Manual testing on EAS dev build:
+   - **Classic mode beginner workout:** bell, combo at t=0, description at t=5, 2–3 reminders distributed across t=30–t=160, end-of-round at t=170/t=180.
+   - **Dynamic mode beginner workout:** bell, combo at t=0, no intro, 4s gap between combos throughout the round, anchor reannouncements at ~90s and ~153s.
+   - **Intermediate workout:** combos contain embedded `slip_*` / `pivot*` / `feint_*` tokens; voice reads them naturally.
+   - **Advanced workout:** combos contain multiple embedded moves; voice handles long combos.
+   - **Mode toggle:** switching modes on Home then starting a workout behaves per the selected mode.
+   - **Rate "Too Easy" 10 times in a row** at beginner: progress hits 100, celebration modal appears, Advance updates level and resets progress.
+   - **At progress=100, tap Stay:** next workout still at peak beginner, `at_level_cap: true` sent to EF. Rate "Too Easy" 3 more times → celebration re-fires.
+   - **Advance, then rate "Too Hard" 3 of next 5:** demotion hint appears in Profile.
+   - **Tap demotion hint:** level reverts, progress resets, hint disappears.
+   - **Pause mid-round** in both modes: schedule re-anchors correctly on resume, no double-fires.
+6. Inspect HomeScreen on iPhone 14, 15, 16, Pro Max via Expo Dev Tools — no scroll, no banner overlap.
+
+---
+
+## Deliverables Checklist
+
+- [ ] `mobile/supabase/migrations/004_progression_columns.sql`
+- [ ] `mobile/supabase/functions/punchpal-migration-004/index.ts` (temp; delete after applying)
+- [ ] Updated `mobile/supabase/functions/punchpal-generate-workout/index.ts` (schema v2, new prompt instructions, server-side validation)
+- [ ] New `mobile/src/lib/combo-variations.ts` + `__tests__/combo-variations.test.ts`
+- [ ] New `mobile/src/lib/progression.ts` + `__tests__/progression.test.ts`
+- [ ] Updated `mobile/src/state/userStore.ts` (new fields, migration logic)
+- [ ] Updated `mobile/src/screens/TimerScreen.tsx` (Classic absolute scheduler + Dynamic hybrid gap scheduler, progression hook)
+- [ ] New `mobile/src/components/LevelUpModal.tsx`
+- [ ] Updated `mobile/src/screens/HomeScreen.tsx` (segmented control)
+- [ ] Updated `mobile/src/screens/ProfileScreen.tsx` (demotion hint card)
+- [ ] Dead code removed (5 sites listed above)
+- [ ] `tasks/todo.md` with plan checked off + Review section
+- [ ] New lessons in `tasks/lessons.md` if any corrections occurred
+
+---
+
+## What NOT to do
+
+- Do not bump `version` in `app.json`. Do not bump `versionCode`.
+- Do not add a Skip Combo button (Phase 3).
+- Do not add an "Up next" card.
+- Do not bundle audio assets.
+- Do not change AdMob configuration.
+- Do not modify RevenueCat code (it was removed; do not re-add).
+- Do not change anonymous auth or any auth flow.
+- Do not auto-demote users without their tap.
+- Do not show the celebration modal on early exit, even if `shouldShowCelebration` is true.
+- Do not chain Dynamic scheduling purely on `Speech.onDone` — the primary timer must always fire (recovers from Android failures).
+- Do not reuse the same reminder cue twice within a Classic round.
+
+Begin by writing the plan to `tasks/todo.md` and waiting for approval. Read `SHADOW_BOXING_TEARDOWN_v5.md` first.

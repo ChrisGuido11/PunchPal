@@ -1,0 +1,508 @@
+# Shadow Boxing Workout App — Teardown & PunchPal AI Coach Adaptation Plan
+
+**Version 5** — major rewrite of §5 and adds §6 + §7. Supersedes v4. Key design changes from v4:
+
+- **Both modes now embed defense/footwork inside the combo notation**, scaled by tier (Beginner: none, Intermediate: light, Advanced: heavy). The two modes differ in *delivery cadence and coaching presence*, not in combo content.
+- **Classic = teaching mode.** Bell + immediate combo at t=0, long-form description (~10–12s) at t=4–5, then Claude-decided form-only reminders distributed across the remaining ~155s, scaled to combo complexity (2–3 / 3–5 / 4–6 reminders by tier).
+- **Dynamic = drilling mode.** Bell + immediate combo at t=0, no intro speech, no fillers, combos rotate at Shadow Boxing-matched cadence (Beginner 25s / Intermediate 17s / Advanced 12s) until end-of-round bell warning at t=170.
+- **Combo notation extends to support inline defense/footwork tokens** like `1-2-slip_right-3-pivot`. Spec in new §7.
+- **Full rating-driven within-level progression** (Just Right +10 / Too Easy +15 / Too Hard +5 / Early Exit +2 / Skipped +8). At progress=100, celebration modal prompts user to advance — they can Stay (re-prompt after 3 more "Too Easy" ratings) or Advance. Demotion safety net via Profile hint if 3+ of last 5 ratings post-advancement are Too Hard. Cap-state variety signal sent to Claude when user is Staying at progress=100. Spec in new §6.
+- Removed v4's "cadence as lead time" framing — turned out to feel like dead silence in practice rather than coaching presence. Both modes now run tight cadences with real coaching content.
+
+**Version 4** — Anchor + Variations model, wider beginner cadence as "lead time" mechanic, pre-warning concept rejected, segmented control on Home for mode switching. Superseded.
+
+**Version 3** — pre-warning approach for cognitive lead time. Rejected because spoken pre-warnings felt naggy. Superseded.
+
+> **Naming note (post-v4):** The "Anchor + Variations" / "Pad Work" model used in Shadow Boxing's teardown (§1–§4) ships in PunchPal as the **Dynamic** mode on the Home screen. We renamed it because user testing showed "Pad Work" makes non-boxers assume they need physical pads or a partner.
+
+## TL;DR
+
+- **Shadow Boxing Workout App** (Marc Gauthier / EZ-Lab Studio, App Store ID 1510911574) is the dominant solo-shadow-boxing iOS app: **4.9★ from 2.7K ratings**, **145K+ cumulative downloads**, free with a paid tier (~£15/yr). Uses **Apple system TTS**, calls punches **by number** using the same 1-jab / 2-cross / 3-lead-hook / 4-rear-hook / 5-lead-uppercut / 6-rear-uppercut convention PunchPal already uses. The "Pad Work" mode rotates combos within a round at qualitatively "steady" (beginner) to "faster" (advanced) cadence.
+- **PunchPal's adaptation ships as two distinct modes** rather than one. **Classic** (teaching) gets the full description + form reminders distributed through the round. **Dynamic** (drilling) gets pad-work cadence with no fillers. **Both** modes share embedded defense/footwork inside the combo notation, scaled by tier.
+- **Within-level progression** is rating-driven and automatic. Cross-level advancement requires user agency (celebration modal with Stay / Advance choice, with sensible re-prompt + demotion safety nets). The 9-tier system already in the codebase becomes a fine-grained difficulty knob inside each level rather than the primary progression mechanic.
+
+---
+
+## 1. Mechanics Teardown — How Shadow Boxing Workout App Sequences Combos
+
+### 1.1 Workout-mode taxonomy
+
+From the developer's own workouts catalog (shadowboxingapp.com/workouts and shadowboxingapp.com/shadow-boxing-app-exercises), the relevant modes are:
+
+| Mode | Behavior |
+|---|---|
+| **Pad Work / Virtual Pad Work** | Calls out **distinct combos** to execute as they come, "like working with a coach on the pads." Combos rotate; not repeated. |
+| **Pad Work (Freestyle)** | Calls out a **number of punches** ("throw a 4-punch combo") and lets the user improvise the sequence. |
+| **Freestyle** | The user free-throws; coach occasionally gives **ideas and directions** (tactical cues). |
+| **Repetitions** | **One combo repeated for the entire round** — this is what PunchPal currently does in v1.1.0. |
+| **Muscle Memory** | Cycles through a small set of basic combos repeatedly until automatic — hybrid between Repetitions and Pad Work. |
+| **Simple Combos** | Same shape as Pad Work but combos "get progressively more difficult" within and across rounds. |
+| **Themed / Guided / Dynamic Freestyle** | Freestyle with constraints (e.g., "include body shots," "add a squat after every combo"). |
+
+The pattern PunchPal users actually want copied is **Pad Work / Simple Combos** — ships in PunchPal as **Dynamic** mode.
+
+### 1.2 Combos per round, cadence, and rotation
+
+The developer does not publish a fixed cadence. Direct evidence:
+
+- Developer blog: *"Beginners get combinations at a steady pace with simpler sequences. More experienced boxers get faster callouts and combinations that require more coordination to execute cleanly."*
+- Developer reply to App Store review (2024-05-15): *"You can adjust the intensity during a training to slow down the rate of commands."*
+- App Store user review (since-resolved): *"The commands are too quick, for a beginner. You need to have an option to SLOW DOWN the rate of commands… It's too quick."*
+
+**Inferred operating range:**
+
+| Level | Combo callout interval | Combos per 3-min round |
+|---|---|---|
+| Beginner | ~20–30s | ~6–9 |
+| Intermediate | ~15–20s | ~9–12 |
+| Advanced | ~10–15s | ~12–18 |
+
+**Rotation pattern:** A → B → C → A → D → B (combos rotate, same combo rarely called twice in a row).
+
+### 1.3 Pre-generated vs. on-the-fly
+
+Marketing copy: *"Each workout is generated on the spot to keep things fresh."* On-device, synchronous, rule-based — a weighted random sampler over a hand-curated combo library. No LLM in the loop.
+
+### 1.4 Visual presentation
+
+App Store screenshots and the developer's `workout_ongoing_4_punch_combo.jpg` show the combo notation prominently displayed in a card, with workout type, current round, total rounds, and timer also visible. Combos are visible AND audible.
+
+### 1.5 Round transitions
+
+- **Start of round:** Bell rings, coach voice introduces the exercise type ("Pad work"), first combo is called shortly after.
+- **End-of-round warning:** 10s / 30s warning is standard.
+- **Rest periods:** Mostly silent except for bells. Default rest is 1 minute between 3-min rounds.
+
+### 1.6 Transition between combos within a round
+
+No audible "next combo" warnings. Combo A is announced → user executes → combo B is announced. Abrupt, like a real pad coach.
+
+---
+
+## 2. Voice / Audio Design
+
+### 2.1 TTS, not pre-recorded — confirmed by the developer
+
+App Store release notes: *"This is a big release… The coach got a new voice! So far we've been using Apple's system voices, but from now on we'll start introducing higher quality voices."* Confirms **Apple AVSpeechSynthesizer** — same engine `expo-speech` wraps on iOS.
+
+### 2.2 Cadence and rhythm
+
+Punchy and short — voice mostly utters numerical combo strings ("one, two, three, five") lasting 1–2 seconds. No long sentences mid-round.
+
+### 2.3 Numbers, not names
+
+From the developer's "Learning to box with an app" blog: *"1 for jab, 2 for cross, 3 for left hook, 4 for right hook, 5 for left uppercut, 6 for right uppercut."* Identical to PunchPal's existing notation.
+
+### 2.4 Body shots
+
+Suffixed verbally with "to the body" — same intent as PunchPal's `b` suffix.
+
+### 2.5 Background music & bells
+
+- App does **not provide music**; ducks the user's Spotify/Apple Music.
+- Standard ring-bell sound for round start, round end, and 10s/30s warnings.
+
+### 2.6 Tactical cues
+
+In Freestyle / Guided Freestyle, the coach drops short tactical cues — "slip left," "double the jab," "to the body" — interleaved with silence.
+
+---
+
+## 3. Progression Logic
+
+### 3.1 Static + user-selected, not adaptive
+
+The user picks a fitness/boxing level in settings and chooses workout intensity per session. **No automatic adaptation based on history.** "Quick start" is a heuristic over prior workout type/intensity/recency, not ML-adaptive.
+
+### 3.2 Beginner vs. Advanced combos
+
+- **Beginner:** 1–3 punch combos, head only, slower cadence.
+- **Intermediate:** 3–5 punch combos, mix head/body, occasional defensive cue.
+- **Advanced:** 4–6+ punch combos with movement and defense baked in.
+
+### 3.3 Workout themes
+
+Extensive: Cardio (HIIT), Technique (Foundations, Muscle Memory), Power (Punching Bag), Defense (Counter Punching, Dodge), Footwork, Body Shots, Core Focus, Jump Rope.
+
+---
+
+## 4. Full App Review
+
+Skipped here for brevity — see v4 doc. Key facts: 4.9★ / 2.7K ratings, 145K+ installs, free + ~£15/yr paid tier, biggest complaint is "voice is robotic," second is "commands too fast for beginners" (since fixed with intensity slider).
+
+---
+
+## 5. Implementation Proposal for PunchPal
+
+### 5.1 Two modes: Classic (teaching) and Dynamic (drilling)
+
+The user picks Classic or Dynamic on the Home screen via a segmented control between the StreakCard and the WorkoutCard. The choice persists in Zustand+AsyncStorage. Existing users default to Classic (preserves behavior); new users default to Dynamic.
+
+| | **Classic** | **Dynamic** |
+|---|---|---|
+| **Round start** | Bell + immediate combo at t=0, full description at t=4–5 (~10–12s of speech) | Bell + immediate combo at t=0, no intro speech |
+| **Mid-round content** | Combo notation called once at start; Claude-decided form reminders distributed across the remaining ~155s | Combos rotate at fixed cadence by tier; no fillers, no reminders, no motivational lines |
+| **Combo cadence within round** | Single anchor combo for the entire round (no rotation) | Beginner 25s / Intermediate 17s / Advanced 12s between combos |
+| **End-of-round** | Bell at t=170 (last 10s warning), bell at t=180 (end) | Same |
+| **Mental model** | "Like working through one combo with a teaching coach who corrects your form" | "Like pad work — coach calls combos, you execute, they call the next one" |
+
+**Both modes use the same combo notation** with embedded defense/footwork scaled by tier (see §5.2 and §7). The difference is *delivery*, not *content*.
+
+### 5.2 Combo content by tier
+
+The 9-tier system (`punchpal_user_stats.next_level_progress` 0–100 within each of beginner/intermediate/advanced) drives combo complexity:
+
+| Tier | Combo shape | Defense/footwork embedding |
+|---|---|---|
+| **Beginner (T1–T3)** | 2–3 punches, head only | **None.** Pure punches, no embedded moves. |
+| **Intermediate (T4–T6)** | 3–4 punches, mixed body/head | **Light.** One slip, roll, or pivot embedded per combo on average. |
+| **Advanced (T7–T9)** | 4–6 punches | **Heavy.** Multiple moves embedded per combo — slip + pivot + roll patterns chained with punches. |
+
+Examples:
+
+- T2 (mid beginner): `1-2-3` → `"one, two, three"` (pure punches)
+- T5 (mid intermediate): `1-2-slip_right-3` → `"one, two, slip right, three"` (one defense embedded)
+- T8 (mid advanced): `1-slip_left-2-pivot-3b-roll-4` → `"one, slip left, two, pivot, three to the body, roll, four"` (multiple moves embedded)
+
+This means defense and footwork are *taught through the combo itself* rather than as side-instructions. A user hears "slip right" between two punches and learns by doing.
+
+### 5.3 Round timeline — Classic mode example (Intermediate, Tier 5)
+
+```
+t=0s     bell.mp3 + "one, two, slip right, three"    ← anchor combo (~3s of speech)
+t=5s     Speech.speak(description) — full form/setup explanation (~10s of speech)
+            "Jab to find range, throw the cross with hip rotation, slip the
+             counter, finish with the lead hook. Keep your chin tucked the
+             whole time."
+t=45s    Speech.speak(reminder_1)  — "rotate the hip on the cross"
+t=95s    Speech.speak(reminder_2)  — "guard up after the slip"
+t=140s   Speech.speak(reminder_3)  — "chin down"
+t=170s   bell.mp3 (10s warning) + "ten seconds"
+t=180s   bell.mp3 (end of round)
+```
+
+Claude generates the description and reminders together — they're consistent. The number of reminders (3 here) was Claude's call based on combo complexity (within the tier bound of 3–5 for intermediate).
+
+### 5.4 Round timeline — Dynamic mode example (Intermediate, Tier 5)
+
+```
+t=0s     bell.mp3 + "one, two, slip right, three"   ← anchor (~3s)
+t=17s    Speech.speak(variation_1)                  ← "one, two-b, slip right, three"
+t=34s    Speech.speak(variation_2)                  ← "double jab, two, slip right, three"
+t=51s    Speech.speak(variation_3)                  ← "one, two, pivot, three"
+t=68s    Speech.speak(variation_4)                  ← "one, two, slip right, three, four"
+t=85s    Speech.speak(variation_5)                  ← anchor reannouncement
+t=102s   Speech.speak(variation_6)                  ← "one, two-b, slip right, three-b"
+t=119s   Speech.speak(variation_7)                  ← "one, pivot, two, three"
+t=136s   Speech.speak(variation_8)                  ← "one, two, slip right, three, four"
+t=153s   Speech.speak(variation_9)                  ← anchor reannouncement
+t=170s   bell.mp3 (10s warning) + "ten seconds"
+t=180s   bell.mp3 (end of round)
+```
+
+Intermediate gets ~10 distinct combo calls in the round at ~17s cadence. Anchor reannouncements at ~85s and ~153s serve as anchor points so the round has a rhythm. Variations all share the embedded `slip_right` from the anchor — when the user advances combos within a round, the embedded moves stay consistent so the user isn't re-learning footwork every 17 seconds.
+
+### 5.5 Speech expansion rules (both modes)
+
+The `expandForSpeech()` function in `mobile/src/lib/combo-variations.ts` handles all notation tokens:
+
+- Numbers: `1→"one"`, `2→"two"`, `3→"three"`, `4→"four"`, `5→"five"`, `6→"six"`
+- Body suffix: `Nb → "N to the body"` (e.g., `2b → "two to the body"`)
+- Defense tokens: `slip_left → "slip left"`, `slip_right → "slip right"`, `roll → "roll"`, `roll_left → "roll left"`, `roll_right → "roll right"`, `block → "block"`, `parry → "parry"`
+- Footwork tokens: `pivot → "pivot"`, `pivot_left → "pivot left"`, `pivot_right → "pivot right"`, `step_back → "step back"`, `step_in → "step in"`, `shuffle_left → "shuffle left"`, `shuffle_right → "shuffle right"`
+- Joined with `, ` between tokens for natural TTS pacing.
+
+### 5.6 Form reminder content (Classic mode only)
+
+Claude picks reminder content from a mix of three categories per combo. No fixed order — Claude picks what's most useful for the specific combo:
+
+1. **Form cues:** "chin down," "elbow tight," "guard up," "breathe out," "rotate the hip"
+2. **Punch-specific corrections:** "rotate the hip on the cross," "snap the jab," "elbow in on the hook," "drop into the uppercut"
+3. **Tempo cues:** "snap, don't push," "fast hands," "settle, then explode"
+
+Reminder content must vary across the round — Claude is instructed not to repeat the same cue twice within a round, and to diversify the *category* of cue across reminders when possible.
+
+### 5.7 Reminder count by tier (Claude bounded)
+
+| Tier | Reminder count range |
+|---|---|
+| **Beginner** | 2–3 |
+| **Intermediate** | 3–5 |
+| **Advanced** | 4–6 |
+
+Bounds chosen to keep cumulative in-round speech (excluding the opening description) under ~12 seconds for beginner, ~15 for intermediate, ~18 for advanced — the "annoying threshold" past which users feel the app is talking over their execution.
+
+Reminders are distributed roughly evenly across the round but Claude is allowed to bunch toward the second half (real coaches correct more in the back half once the student has had time to attempt the combo).
+
+### 5.8 Rest periods (both modes)
+
+- 60s default rest between 3-min rounds.
+- Coach speaks at `rest+2s`: *"Good round. Take a breath."*
+- At `rest+25s`: a short technique tip for the *upcoming* round, generated by Claude once and stored on the round.
+- At `rest+50s`: *"Ten seconds, get ready."*
+- At `rest+60s`: bell + next round begins.
+
+### 5.9 Scheduler architecture
+
+Single chained `setTimeout` against absolute wall-clock time. Every delay computed from `roundStartedAt`, never from the previous timeout firing. `Speech.stop()` called only at round start, not before every utterance. `onDone` NOT used to gate the next utterance. Separate 250ms `setInterval` ticker drives the visible countdown only.
+
+Pause/resume: `Speech.stop()` on pause, record `pausedAt`. On resume, add `(Date.now() - pausedAt)` to `pausedAccumMs` and re-schedule from the current index against the adjusted clock.
+
+### 5.10 Speech-engine specifics (Expo Speech)
+
+- Rate: 0.95 on iOS, 0.88 on Android (unchanged from current).
+- Pre-expand notation server-side into `expanded_speech` field on each combo — runtime expansion in the client races against re-renders.
+- Background audio: declare `UIBackgroundModes: ["audio"]` in `app.json` so TTS continues with the screen locked.
+- `AppState` listener recomputes the schedule on foreground return.
+
+### 5.11 UI
+
+HomeScreen gets a segmented control between StreakCard and WorkoutCard:
+
+```
+┌────────────────────────────────────────┐
+│  CLASSIC          │      DYNAMIC       │  ← 36pt tall, full card width
+└────────────────────────────────────────┘
+   Classic — one combo with form coaching     ← when Classic active
+   Dynamic — combos rotate, real pad work     ← when Dynamic active
+```
+
+Active segment: filled `#DC2626` (Boxing Red), white bold uppercase text. Inactive: transparent, muted text.
+
+TimerScreen unchanged in layout — same anchor combo card, same play/pause button. Combo card animates (scale + red border pulse) at each TTS fire moment. No "Up next" card. No pre-warning cues.
+
+### 5.12 Risks and mitigations
+
+| Risk | Mitigation |
+|---|---|
+| Classic gets repetitive after several rounds drilling the same combo | Form reminders mix categories; rest-period technique tip changes each round; users who want variety pick Dynamic |
+| Dynamic feels mechanical / not coach-like | Embedded defense/footwork makes each combo feel like a complete teaching moment; anchor reannouncements at ~50% and ~85% give the round a structure |
+| Tier-mismatched users (beginner toggles to Advanced via Profile) get overwhelmed | Embedded moves only appear at the user's actual tier; Profile change re-renders next workout at new tier |
+| Expo TTS can't keep up at advanced 12s cadence | Pre-expanded speech strings, no runtime parsing during round. 12s ≥ 4× typical 3s utterance. Tested separately. |
+| User pauses mid-combo | `Speech.stop()` + `pausedAccumMs` accounting; resume re-anchors absolute schedule cleanly |
+| OS backgrounds the timer | Audio session + `AppState` listener recomputes schedule on foreground |
+| Schema migration for existing v1 workouts | `schema_version: 2` flag; legacy v1 workouts render in current single-combo behavior; v2 uses new round/callout/notation shape |
+
+### 5.13 Migration plan
+
+**Phase 1+2 (combined, ~3 weeks):** This document. Everything in §5, §6, §7. Ships Classic + Dynamic, embedded defense/footwork notation, full progression system, level-up + demotion logic, cap-state variety. Edge Function rewrite + client TimerScreen rewrite + Zustand store updates + database column additions.
+
+**Phase 3 (1 week, post-launch):** Skip Combo button on TimerScreen, per-tier cadence A/B testing based on round-completion telemetry, optional Apple premium voice integration.
+
+**Phase 4 (TBD):** Adaptive learning — track which combos the user skips most often, feed back into Claude's prompt as "user struggles with X, avoid in next workout." Combo-pattern rotation for cap-state variety (currently option 1 of cap-variety; option 3 if telemetry warrants).
+
+---
+
+## 6. Progression System (new in v5)
+
+This section spec's the rating-driven progression that fixes PunchPal's current static-tier problem.
+
+### 6.1 The two-knob model
+
+**Knob 1 — Within-level difficulty** (automatic, rating-driven).
+`next_level_progress` (0–100) inside `punchpal_user_stats` advances based on every workout's outcome. Drives the 9-tier system already present in the Edge Function — combos get more complex, defense/footwork density increases, Dynamic cadence tightens as the user moves through their current level.
+
+**Knob 2 — Cross-level advancement** (user agency).
+When `next_level_progress` hits 100, a celebration modal prompts the user. They choose Advance (jump to next level, progress resets to overflow) or Stay (keep drilling at the cap, with re-prompt logic).
+
+### 6.2 Rating-to-points mapping
+
+After every workout (completed or early-exited):
+
+| Outcome | Points added to `next_level_progress` |
+|---|---|
+| Completed, rated "Too Easy" | **+15** |
+| Completed, rated "Just Right" | **+10** |
+| Completed, rated "Too Hard" | **+5** |
+| Completed, rating skipped | **+8** |
+| Early-exited (any rating) | **+2** |
+
+These points are added in `TimerScreen.finishWorkout` (rated path) AND `TimerScreen.exitToHome` (early-exit path), before the existing `logWorkoutSession` call so the new progress value is reflected in `punchpal_user_stats` immediately.
+
+Sanity math: a user who's rating "Just Right" every workout reaches the next level in 10 workouts (~10 days of daily training). "Too Easy" pattern advances in ~7 workouts. "Too Hard" pattern takes ~20.
+
+### 6.3 At progress=100: celebration modal
+
+When a completed workout's rating-points addition takes `next_level_progress` to ≥100, AND the user is not already at `advanced` level, fire a celebration modal on the workout-complete screen (after the rating modal, before the post-workout interstitial). Modal contents:
+
+- Headline: *"You've mastered Beginner."* (or Intermediate)
+- Subhead: *"Ready for Intermediate?"* (or Advanced)
+- Two buttons:
+  - **Advance** — sets `current_level` to next level, sets `next_level_progress` to (current - 100), fires `level_up_inter` or `level_up_advanced` achievement, plays celebration haptic + sound.
+  - **Stay at Beginner** — keeps `current_level`, pins `next_level_progress` at 100, sets a new `level_cap_staying_since` timestamp in `punchpal_user_stats`.
+
+If the user is already at `advanced` and hits 100, no modal — they're at the top, the system just pins them at 100.
+
+### 6.4 Stay path: cap-state behavior
+
+When the user has tapped "Stay" and is pinned at `next_level_progress = 100`:
+
+- Workouts continue at peak difficulty for the current level (top of T3 / T6 / T9 within the tier system).
+- The Edge Function receives an additional flag `at_level_cap: true` and a `level_cap_too_easy_count_since_stay` integer.
+- The Edge Function prompt instructs Claude: *"User is at the cap of their current level. Prioritize variety — choose combos and workout themes they're unlikely to have seen recently. Use edge-case combinations from the current level's vocabulary. Vary workout names creatively."*
+- Combo-pattern rotation tracker (new column `recent_combo_signatures` on `punchpal_user_stats`, JSONB array of last 10 combo notation hashes) is sent to Claude so it can actively avoid repeats.
+
+### 6.5 Stay path: re-prompt logic
+
+- Increment `level_cap_too_easy_count_since_stay` by 1 each time the user rates "Too Easy" while pinned at 100.
+- When the counter hits 3, fire the celebration modal again on the next workout-complete screen.
+- If the user taps Stay again, reset the counter to 0 and continue. No time-gated re-prompts.
+
+### 6.6 Advance path: demotion safety net
+
+After a user accepts Advance, track the next 5 ratings in a sliding window:
+
+- If 3+ of the last 5 ratings are "Too Hard," surface a hint in Profile (not a blocking modal) that reads: *"Based on your recent ratings, you might prefer [previous level]."* Tapping it reverts the user's level. Doesn't auto-demote.
+- The hint disappears once the user's 5-rating window contains fewer than 3 "Too Hard."
+
+### 6.7 Profile: manual override always available
+
+- Profile screen retains the boxing-level selector (currently exists at `ProfileScreen.tsx:84`).
+- Tapping a level here is a hard manual override — sets the level, resets `next_level_progress` to 0, clears `level_cap_staying_since`, clears the 5-rating demotion window.
+- This is the user's escape hatch for any progression state they want to override.
+
+### 6.8 Dead code to remove
+
+Per the audit in our discussion:
+
+- `database-service.ts:319 evaluateLevelUp()` — relies on accuracy field that's always 0. Delete.
+- `user-service.ts:69` syncUserStats hardcoded reset of `nextLevelProgress` to 0 with the "will be calculated" comment. Replace with no-op (the field is owned by the rating-points logic now).
+- `HomeScreen.tsx:70` static formula `Math.round(workoutHistory.length / threshold * 100)`. Delete — the value is owned by the rating-points logic.
+- `user-service.ts:93 getRecommendedLevel()` — repurpose for the Profile demotion hint instead of its current unused state.
+
+### 6.9 New columns on `punchpal_user_stats`
+
+```sql
+ALTER TABLE punchpal_user_stats
+  ADD COLUMN level_cap_staying_since timestamptz NULL,
+  ADD COLUMN level_cap_too_easy_count_since_stay int NOT NULL DEFAULT 0,
+  ADD COLUMN recent_combo_signatures jsonb NOT NULL DEFAULT '[]'::jsonb,
+  ADD COLUMN demotion_window jsonb NOT NULL DEFAULT '[]'::jsonb;
+```
+
+Apply via temp Edge Function per the established PunchPal migration pattern (since `supabase db push` is blocked by the shared project).
+
+### 6.10 Achievements
+
+Wire up the existing `level_up_inter` and `level_up_advanced` achievements (defined at `achievements.ts:72,78` but never fired). Fire at the moment the user taps Advance in the celebration modal, not on Profile-based manual changes.
+
+---
+
+## 7. Notation Format (new in v5)
+
+The combo notation format extends to support inline defense and footwork tokens. This section is the canonical spec for the parser, expander, and variation generator.
+
+### 7.1 Grammar
+
+```
+combo       := token ("-" token)*
+token       := punch | defense | footwork
+punch       := digit "b"?
+digit       := "1" | "2" | "3" | "4" | "5" | "6"
+defense     := "slip_left" | "slip_right" | "roll" | "roll_left" | "roll_right"
+             | "block" | "parry"
+footwork    := "pivot" | "pivot_left" | "pivot_right" | "step_back" | "step_in"
+             | "shuffle_left" | "shuffle_right"
+```
+
+Tokens are separated by `-`. The `b` suffix on a punch means "to the body" (existing PunchPal convention preserved).
+
+### 7.2 Examples
+
+| Notation | Speech | Tier appropriate? |
+|---|---|---|
+| `1-2-3` | "one, two, three" | Beginner / Intermediate / Advanced |
+| `1-2b-3` | "one, two to the body, three" | All |
+| `1-2-slip_right-3` | "one, two, slip right, three" | Intermediate+ |
+| `1-slip_left-2-pivot-3` | "one, slip left, two, pivot, three" | Advanced |
+| `1-2-roll-3b-pivot_right-4` | "one, two, roll, three to the body, pivot right, four" | Late advanced |
+
+### 7.3 Constraints
+
+- A combo must contain at least one punch token.
+- Two consecutive defense or footwork tokens are not allowed (`slip_right-pivot-3` is fine; `slip_right-pivot` without an intervening punch is rejected).
+- No more than 3 non-punch tokens in a single combo.
+- Total token count ≤ 8.
+
+### 7.4 Variation generator (Dynamic mode)
+
+`generateVariations(anchor, count)` in `mobile/src/lib/combo-variations.ts` must respect embedded moves:
+
+- Variations preserve at least one embedded defense/footwork token from the anchor (when present).
+- Variations may add new defense/footwork tokens within the tier's complexity budget.
+- Variations may not introduce moves above the user's tier (no slips for beginner variations).
+
+Strategies (apply in order, take what fits):
+
+1. Drop the last punch (preserving any embedded moves before it)
+2. Add `b` to the last punch
+3. Insert a body shot mid-combo
+4. Add an embedded move appropriate for the tier (intermediate+: insert one slip; advanced: insert pivot or roll)
+5. Reorder punches while preserving move positions
+6. Append a hook or uppercut (head or body)
+
+The function is deterministic — same input always produces the same output sequence.
+
+### 7.5 Edge Function output schema
+
+The Edge Function `punchpal-generate-workout` returns the updated schema:
+
+```ts
+type Workout = {
+  workout_id: string;
+  title: string;
+  level: 'beginner' | 'intermediate' | 'advanced';
+  tier: 1-9;
+  rounds: Round[];
+  schema_version: 2;
+};
+
+type Round = {
+  round_number: number;
+  anchor_combo: Combo;
+  classic_description: string;     // full ~10-12s teaching narrative
+  classic_reminders: Reminder[];   // 2-6 reminders, count by tier
+  rest_tip?: string;
+};
+
+type Combo = {
+  notation: string;                // e.g., "1-2-slip_right-3"
+  expanded_speech: string;         // e.g., "one, two, slip right, three"
+  punch_count: number;
+  has_body_shot: boolean;
+  has_embedded_defense: boolean;
+  has_embedded_footwork: boolean;
+};
+
+type Reminder = {
+  speech: string;                  // short cue, ≤4 words ideally
+  category: 'form' | 'punch_correction' | 'tempo';
+  // No start_at_seconds — client distributes evenly across t=30..t=160
+};
+```
+
+Client distributes `classic_reminders` evenly across the round (avoid the first 25s where the description is still playing, and the last 15s where the end-of-round bell needs space). Specifically: divide the window t=30 to t=160 by `(classic_reminders.length + 1)` and place each reminder at the resulting intervals.
+
+---
+
+## Caveats
+
+- The Shadow Boxing cadence numbers (25 / 17 / 12s) are inferred. Empirically tune via Phase 3 A/B testing.
+- Expo TTS quality remains a known issue. Phase 4 considers pre-rendered ElevenLabs cache for common phrases.
+- The rating-points values (10/15/5/2/8) are a starting balance. Telemetry from Phase 1+2 launch will inform tuning. If users hit advanced within 15 workouts and rate "Too Hard" repeatedly, slow the Too Easy points to +12.
+- The cap-state combo-pattern rotation (option 3 of cap-variety) ships in this build via the `recent_combo_signatures` column — this is more than was originally scoped under option 1, but the data layer is the heavy part and Claude prompt instruction is the cheap part. Adding both now saves a future migration.
+
+---
+
+## Recommendations Summary
+
+1. **Do** ship Classic + Dynamic together in one Phase 1+2 release.
+2. **Do** embed defense/footwork in the combo notation. The notation format is the single source of truth for delivery; consumers just parse and expand.
+3. **Do** wire `next_level_progress` to be rating-driven on every workout outcome. Replace the static formula and the dead `evaluateLevelUp`.
+4. **Do** show a celebration modal at progress=100 with user-agency choice. Cross-level advancement is never silent or forced.
+5. **Do** track demotion-window ratings for the safety hint in Profile. Don't auto-demote.
+6. **Do** send the cap-state variety signal AND combo-signature rotation to Claude when the user is Staying at progress=100.
+7. **Don't** randomize Dynamic combos at runtime — generator is deterministic, variations respect tier.
+8. **Don't** chain TTS scheduling on `Speech.onDone` — absolute wall-clock setTimeout only.
+9. **Don't** reuse the same reminder cue twice within a Classic round.
+10. **Benchmark for tuning:** if Classic round-completion drops below 80% post-launch, the description is too long — cut to ~8 seconds. If Dynamic users at beginner level rate "Too Hard" frequently, widen beginner cadence from 25s to 30s.

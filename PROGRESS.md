@@ -1,6 +1,6 @@
 # PunchPal — Progress
 
-_Last Updated: 2026-05-15 (auth deadlock fix + account-deletion edge function + signup success branching + keyboard UX)_
+_Last Updated: 2026-05-24 PM (Variety + mode-mismatch + Phase 4.1 adaptive learning — all three shipped via OTA same day)_
 
 PunchPal is an AI-powered boxing coach for iOS that generates personalized workouts using Claude Sonnet 4.6, tracks user progression across 9 tiers (raw beginner → pro), and delivers verbal cues during timed rounds.
 
@@ -72,12 +72,16 @@ All tables on the shared Supabase project under `public` schema, prefixed `punch
 | `total_workouts` | int | local mirror of zustand history count |
 | `total_minutes` | int | summed workout duration |
 | `current_level` | text | `beginner` / `intermediate` / `advanced` |
-| `next_level_progress` | float | 0–100, used for tier calculation |
+| `next_level_progress` | float | 0–100, now **rating-driven** (set by `computeProgression`); used for 9-tier calculation |
 | `combos_learned` | int | distinct combos completed |
 | `current_streak` | int | days |
 | `longest_streak` | int | days |
-| `avg_accuracy` | float | 0–100 |
+| `avg_accuracy` | float | 0–100 (no longer written; field deprecated by v1.1.0 progression rewrite) |
 | `last_workout_date` | timestamptz | |
+| `level_cap_staying_since` | timestamptz | NULL by default; set when user taps Stay at progress=100 |
+| `level_cap_too_easy_count_since_stay` | int | counts Too Easy ratings while at cap; triggers re-prompt at 3 |
+| `recent_combo_signatures` | jsonb | last 10 anchor-combo notation hashes (FNV-1a 8-char); sent to EF for cap-state variety |
+| `demotion_window` | jsonb | sliding window of last 5 RatingOutcomes; surfaces Profile demotion hint at ≥3 too_hard |
 | timestamps | | |
 
 ### `punchpal_workout_sessions`
@@ -113,6 +117,7 @@ _Schema-level support exists; not yet wired from the mobile app post-workout._
 - `001_init_schema.sql` — original tables (bare names)
 - `002_prefix_tables.sql` — rename to `punchpal_*` (idempotent, applied via temp EF)
 - `003_add_difficulty_rating.sql` — added `difficulty_rating` to sessions (applied via temp EF)
+- `004_progression_columns.sql` — added the four rating-driven progression columns (`level_cap_staying_since`, `level_cap_too_easy_count_since_stay`, `recent_combo_signatures`, `demotion_window`). Applied 2026-05-22 via temp EF `punchpal-migration-004`. Verified all four columns present + defaults set.
 
 > `supabase db push` is blocked by foreign migrations on the shared project. Migrations are applied via temp Edge Functions that connect to `SUPABASE_DB_URL` and run SQL directly. The temp EFs are deleted after use.
 
@@ -127,26 +132,58 @@ Two deployed: **`punchpal-generate-workout`** and **`punchpal-delete-account`**.
 - JWT verification ON (default). Mobile passes session JWT automatically via `supabase.functions.invoke()`.
 - Anonymous sessions accepted.
 
-### Request body
+### Request body (schema_version 2)
 ```ts
 {
   boxingLevel: "beginner" | "intermediate" | "advanced",
   workoutType?: "quick" | "power" | "endurance" | "technique",
   workoutHistory: number,                  // total prior workout count
   userStats?: UserStats | null,
-  recentSessions?: RecentSession[]         // last 5 with ratings
+  recentSessions?: RecentSession[],        // last 5 with ratings
+  mode?: "classic" | "dynamic",            // NEW v1.1.0 — drives reminder generation
+  at_level_cap?: boolean,                  // NEW — user pinned at progress=100 having tapped Stay
+  level_cap_too_easy_count_since_stay?: number,
+  recent_combo_signatures?: string[]       // last 10 FNV-1a hashes; Claude asked to avoid collisions
 }
 ```
 
-### Response
+### Response (schema_version 2)
 ```ts
 {
-  name: string,                             // "Two Word Style: Rest of Name"
-  duration: number,                         // minutes
-  rounds: number,
-  combos: { name, notation, description }[] // length === rounds
+  workout_id: string,                      // UUID
+  title: string,                           // "Two Word Style: Rest of Name"
+  level: BoxingLevel,
+  tier: 1..9,
+  rounds: Round[],                         // length === requested rounds
+  schema_version: 2,
+  duration: number,                        // minutes (rounds.length * 3)
+  workout_type: WorkoutType,
+  mode: "classic" | "dynamic"
 }
+Round {
+  round_number: number,
+  anchor_combo: Combo,                     // single anchor per round
+  classic_description: string,             // 10-12s narrative (empty in Dynamic)
+  classic_reminders: Reminder[],           // 2-3 / 3-5 / 4-6 by tier (empty in Dynamic)
+  rest_tip?: string
+}
+Combo {
+  notation: string,                        // canonical v5 grammar
+  expanded_speech: string,                 // server-canonicalized
+  punch_count: number,
+  has_body_shot: boolean,
+  has_embedded_defense: boolean,
+  has_embedded_footwork: boolean
+}
+Reminder { speech, category: "form" | "punch_correction" | "tempo" }
 ```
+
+### v5 notation grammar
+- **Punches:** `[1-6]b?` (b suffix = body shot)
+- **Defense (8, directional, intermediate+):** `slip_left/slip_right/roll_left/roll_right/block_left/block_right/parry_left/parry_right`
+- **Footwork (6, directional, intermediate+):** `pivot_left/pivot_right/step_back/step_in/shuffle_left/shuffle_right`
+- **Feints (6, intermediate+):** `feint_jab/feint_cross/feint_hook/feint_uppercut/feint_high/feint_low`
+- **§7.3 constraints (server-enforced):** combo must contain ≥1 punch AND end with a punch; no two consecutive non-punch tokens; ≤3 non-punch tokens; ≤8 total tokens; beginner tier is pure-punch only.
 
 ### Internal flow
 1. Read `ANTHROPIC_API_KEY` from secrets
@@ -341,6 +378,143 @@ supabase functions deploy punchpal-generate-workout --project-ref zeskhorwddxyjh
 
 ## What's Been Done (Recent History)
 
+**This session (2026-05-24 PM — Phase 4.1 adaptive learning — rating-derived combo struggle/success signal):**
+
+User cut Skip Combo (Phase 3.1) and premium voice (Phase 3.3, already done) from scope but asked for adaptive learning + telemetry. The original v5 spec gated 4.1 on skip-combo telemetry; without that, we derive the signal from existing workout difficulty ratings the user already provides.
+
+- **Migration 005** (`mobile/supabase/migrations/005_combo_rating_counts.sql`) — added `too_easy_count`, `just_right_count`, `too_hard_count` columns to `punchpal_combo_progress` and relaxed `combo_name` from NOT NULL (it was set in 001 but we don't always have a meaningful name for arbitrary notations like `1-2-slip_right-3`). Created `punchpal_record_combo_rating(p_user_id, p_notation, p_name, p_rating)` Postgres function (SECURITY INVOKER) doing atomic INSERT … ON CONFLICT DO UPDATE — race-free upsert+increment. Applied via temp EF `punchpal-migration-005` which returned `{ok: true, columns: 3, rpc: 1}` — temp EF still deployed on Supabase pending cleanup.
+- **Mobile telemetry write:** `TimerScreen.submitRating` now calls `recordComboProgressForSession(userId, anchors, rating)` on the rated path. Skipped on early-exit AND on skip-rating. Each anchor of the completed workout gets +1 in the rating-specific bucket.
+- **Difficulty-signal helper:** `getComboDifficultySignal(userId)` queries the last 30 rated combos and partitions into:
+  - `struggles`: `too_hard_count > (just_right + too_easy) && too_hard_count >= 1` — capped at 8
+  - `successes`: `(just_right + too_easy) >= 2 && too_hard_count <= 1` — capped at 8
+- **EF accepts two new request fields** — `combos_user_struggles_with: string[]`, `combos_user_succeeds_with: string[]` (each sliced to ≤8 server-side). New `difficultyBlock` in `buildUserPrompt` between `varietyBlock` and `capBlock`. Wording: "Avoid these exact notations. Simplify similar patterns. Similar shapes are appropriate — the user has executed these cleanly."
+- **Cold-start gating** in `workout-generator.ts` — the signal queries are skipped until `workoutHistory >= 5`. New users get a normal prompt with no difficulty block (no noisy bias).
+- **Parallel fetches:** `getUserStats`, `getWorkoutHistory(5)`, and `getComboDifficultySignal` are now `Promise.all`'d inside `generateWorkout` since they're independent reads.
+
+**EF redeployed; OTA `19d08c0f-baf4-4380-8687-b9286186331a` live on the preview channel.**
+
+**Curl smoke test** (intermediate, struggle=`[1-2-3-2-3, 1-2-slip_right-3]`, success=`[1-2-3, 2-3-2]`): Claude returned 10 anchors that avoided BOTH struggles entirely and included `2-3-2` (exact match) plus `1-2-3b` / `1-2b-3` (similar shapes to `1-2-3`). End-to-end signal confirmed working.
+
+**Files changed this session (PM):**
+- `mobile/supabase/migrations/005_combo_rating_counts.sql` — NEW
+- `mobile/supabase/functions/punchpal-migration-005/index.ts` — NEW (temp; pending cleanup)
+- `mobile/src/api/database-service.ts` — `ComboDifficultySignal` type, `recordComboProgressForSession`, `getComboDifficultySignal`
+- `mobile/src/api/workout-generator.ts` — parallel fetch + signal forwarded in EF request body
+- `mobile/src/screens/TimerScreen.tsx` — `recordComboProgressForSession` import + call inside `submitRating` (rated path only)
+- `mobile/supabase/functions/punchpal-generate-workout/index.ts` — `RequestBody` extended; `buildUserPrompt` accepts struggles + successes; `difficultyBlock` rendered
+- `mobile/supabase/functions/punchpal-generate-workout/CLAUDE.md` — new request fields documented; user-prompt layer order updated
+
+**This session (2026-05-24 — Variety-signal rewrite + Classic/Dynamic mode-mismatch auto-regen):**
+
+User flagged two ship-blockers while testing the preview build mid-v1.1.0 ramp:
+1. *"the combos are always the same when generating fresh workouts from the home screen"* — AI workouts felt repetitive
+2. *"changing options between dynamic and classic keeps the same workout already generated"* — mode toggle didn't regenerate the workout
+
+Two OTA pushes shipped this session, both diagnosed via systematic-debugging:
+
+- **EF `recent_combo_signatures` was structurally inert outside cap state.** The client always sent the signatures, but `buildUserPrompt` only rendered them in `capBlock` (`atLevelCap === true`). For users progressing through tiers (the common case) Claude received zero recent-combo signal. Compounded by: (a) signatures stored as FNV-1a hashes which Claude can't interpret, (b) `buildRecentHistoryBlock` rendered a non-existent `s.workoutType` field and omitted `s.workoutName`, killing CRITICAL RULE #7 ("never reuse workout names"). Fix shipped in `mobile/supabase/functions/punchpal-generate-workout/index.ts`:
+  - Extracted `varietyBlock` (always-on when `recentSignatures.length > 0`) from the cap-only block. Cap directive still layers on top at cap.
+  - `buildRecentHistoryBlock` now renders `s.workoutName` and drops the `workoutType` reference.
+  - Per-tier `VARIETY STRATEGY` lines added to all 9 tier guidance strings (T1/T2 = rotate opening punch + body-shot placement; T4-T6 = rotate embedded-move family; T7-T9 = rotate fighter-inspiration: Crawford/Inoue/Lomachenko).
+  - Temperature 0.8 → 0.9.
+  - System-prompt cap block stripped of the stale "hash collision" wording.
+- **Mobile-side variety push timing fixed.** `pushComboSignatures` only fired on workout completion, so spam-regens of "Get Fresh Workout" sent identical inputs to the EF. Moved the push to fire at **generation time** in `HomeScreen.loadWorkout` (in addition to completion). Buffer dedups so double-pushing the same workout doesn't crowd out older entries. TimerScreen now sends raw notations to `pushComboSignatures` instead of FNV-1a hashes (kept `hashCombo()` exported for potential Phase 3.1 use).
+- **`WorkoutMode` type relocated** from `userStore.ts` to `types/workout.ts` (re-exported from userStore for back-compat) to break a circular-import risk before adding `mode` to `WorkoutPlan`.
+- **`WorkoutPlan.mode: WorkoutMode` added.** EF mapper in `workout-generator.ts` writes `data.mode ?? mode`; fallback workouts inherit the requested mode (via new `mode` param on `getRandomFallbackWorkout`).
+- **HomeScreen auto-regenerates on mode toggle.** New `useEffect([workoutMode])` watches the Zustand mode; if mismatched against `currentWorkout.mode`, fires `freshWorkoutAd.show(() => loadWorkout())` — same path as the manual Get Fresh button. Initial-version had `if (!currentWorkout.mode) return` which skipped pre-fix persisted workouts; user testing surfaced this and we shipped a follow-up that triggers regen on undefined mode too (the persisted-state-stale edge case). The 30s ad-frequency cap doubles as toggle-spam debounce. `lastAppliedModeRef` prevents auto-regen on cold launch / hydration.
+- **`WorkoutModeToggle` accepts `disabled` prop.** HomeScreen passes `isGenerating` so the toggle visually mutes (opacity 50%) and drops taps during an in-flight regen.
+
+**EF deployment + OTA log:**
+- EF redeployed twice on Supabase project `zeskhorwddxyjhhnpgsa` — once for the variety changes (T1/T2 only initially), once for the all-tier variety rollout after user surfaced that intermediate + advanced needed the same treatment.
+- OTA `87f1b6bd-3832-490d-98ad-a04b762bf071` — variety fix mobile side.
+- OTA `aa274e0d-765b-4a40-9f21-aa471cd48de1` — mode-mismatch auto-regen.
+
+**Smoke tests run against the deployed EF:**
+- Beginner with empty avoid list → 7 default tier-1/2 anchors.
+- Beginner with avoid=[1-2,1-1-2,1-2-3,1-4,3-4] → 6 anchors, 6/6 unique vs avoid list.
+- 3-run progressive smoke at beginner shows visibly different anchor sets across regens.
+- Intermediate 3-run progressive: 10/10 anchors unique across all three runs; rotation of embedded tokens (slips → rolls → feints) across regens.
+- Advanced 3-run progressive: anchor count varied 6→11→10; tier-9 rotated embedded-move families (shuffle-heavy → parry+feint_low → block_left/right).
+
+**Files changed this session:**
+- `mobile/supabase/functions/punchpal-generate-workout/index.ts` — variety+history+temperature+tier-guidance edits
+- `mobile/supabase/functions/punchpal-generate-workout/CLAUDE.md` — variety-block doc, notation semantics, T1/T2 pool note
+- `mobile/src/types/workout.ts` — `WorkoutMode` type + `WorkoutPlan.mode` field
+- `mobile/src/state/userStore.ts` — re-export `WorkoutMode` from types; `pushComboSignatures(notations)` rename + dedup logic
+- `mobile/src/api/workout-generator.ts` — map `data.mode`; pass `mode` to fallback; thread through all 4 fallback call sites
+- `mobile/src/screens/HomeScreen.tsx` — `useEffect([workoutMode])` regen path; `lastAppliedModeRef`; pushComboSignatures on generate; `disabled={isGenerating}` on toggle
+- `mobile/src/screens/TimerScreen.tsx` — push raw notations not hashes; remove unused `hashCombo` import
+- `mobile/src/components/WorkoutModeToggle.tsx` — `disabled` prop + opacity-50 muting
+
+**This session (2026-05-22 — Phase 1+2 ship: Dynamic mode v5, rating-driven progression, embedded tokens, celebration/demotion modals, app icon swap):**
+
+- **Migration 004 deployed + applied** — 4 new columns on `punchpal_user_stats` (level-cap state, recent combo signatures, demotion window). Temp EF `punchpal-migration-004` invoked once, returned `{ok: true, columns: [...]}` confirming all four columns exist with correct types and defaults. Still deployed on Supabase + present in repo — pending user OK to delete.
+- **Notation library extended to v5 grammar** — `mobile/src/lib/combo-variations.ts` rewritten on top of a richer `Token` union (punch / defense / footwork / feint). 8 directional defense tokens + 6 footwork + 6 feints (intermediate+). New strict `parse()` enforces §7.3 (combo ends with punch, no consecutive non-punches, ≤3 non-punches, ≤8 total). New `expandForSpeech()` handles all token kinds (`slip_right` → `"slip right"`, `feint_jab` → `"feint jab"`). New `estimateSpeechDuration(speech, platform)` returns ms (400ms iOS / 435ms Android per word + 300ms startup, clamped [1000, 8000]). New tier-aware `generateVariations(anchor, count, tier)` — budget 0/2/3 non-punch tokens by tier (1-3/4-6/7-9); preserves at least one embedded move from anchor when present. New `hashCombo()` (FNV-1a, 8-char hex). 11 strategies including 3 new tier-gated (`insertSlipMid`, `insertPivotEnd`, `insertRollMid`). **59 tests pass** (17 v4 back-compat preserved unchanged + 42 new v5 cases).
+- **Progression module** — new `mobile/src/lib/progression.ts`. Pure functions: `pointsForOutcome` (too_easy +15, just_right +10, too_hard +5, skipped +8, early_exit +2), `computeProgression(input)` returns `{newProgress, shouldShowCelebration, shouldShowDemotionHint, newLevelIfAdvancing, newLevelCapTooEasyCount, newDemotionWindow}`. Handles cap-state pin (stays at 100 until 3 Too Easy → re-prompt celebration), advanced cap (no celebration ever, pinned at 100), demotion window (3+ too_hard in last 5 + non-beginner → hint). **22 tests pass** covering all branches.
+- **EF rewrite to schema_version 2** — `mobile/supabase/functions/punchpal-generate-workout/index.ts` returns `{ workout_id, title, level, tier, rounds[], schema_version: 2, duration, workout_type, mode }`. New inputs (`mode`, `at_level_cap`, `level_cap_too_easy_count_since_stay`, `recent_combo_signatures`) drive prompt variants. Prompt teaches full v5 grammar + §7.3 constraints + Classic vs Dynamic output requirements + cap-state variety directive + Lomachenko shuffle note for `shuffle_left/right` in advanced combos. Inlined Deno parser/expander mirrors the mobile lib for **server-side validation** — rejects bad grammar, beginner combos with embedded tokens, out-of-range punch counts; overwrites Claude's `expanded_speech`/`punch_count`/`has_*` metadata with deterministic values. **Deployment pending user.**
+- **Mobile client mapper** — `mobile/src/api/workout-generator.ts` rewrites the EF client wrapper. Passes new EF inputs (mode from store, at_level_cap / capCount / signatures pulled from `useUserStore.getState()` inside the function). Maps snake_case EF response to camelCase `WorkoutPlan` with `rounds: Round[]`. All fallback workouts converted to new shape using the mobile lib's `parse` + `expandForSpeech` so they include all combo metadata.
+- **Store v2 migration** — `userStore` persist version bumped 1→2. Migrate nulls `currentWorkout` (schema v1 → v2 invalidation) so HomeScreen regenerates fresh on first launch post-update. New fields: `nextLevelProgress`, `levelCapStayingSince`, `levelCapTooEasyCountSinceStay`, `demotionWindow`, `recentComboSignatures`. New composite setters: `applyProgressionResult`, `pushComboSignatures`, `setLevelCapStaying`, `advanceLevel`, `hardResetProgression`, `hydrateProgressionFromDb`.
+- **TimerScreen rewrite** — reads `rounds[currentRound-1].anchorCombo` (was `combos[currentComboIndex]`). **Classic scheduler:** bell at t=0 + anchor speech, description at t=5s, reminders distributed evenly across [30s, 160s] window (`130 / (count+1)` step), end-of-round bells at t=170 + t=180. **Dynamic hybrid gap scheduler:** per-combo loop — `estimateSpeechDuration + 4s` primary timer + `Speech.onDone` refinement (early-fire = no-op, late-fire + primary not yet fired = cancel + force 4s gap, late-fire + primary already fired = accept overlap). Never stalls on Android even if onDone never fires. Anchor reannouncements at slots closest to t=90s and t=153s. **Pause:** Classic resumes reminder schedule from current index; Dynamic re-fires current combo from start (per v5 §5.9). **AppState foreground listener** re-anchors schedule per mode. **finishWorkout:** maps rating → RatingOutcome → `computeProgression` → `applyProgressionResult` → `pushComboSignatures(hashes)` → `upsertUserStats` → `logWorkoutSession`. Mounts `LevelUpModal` when `shouldShowCelebration`. **Early exit:** outcome forced to `early_exit` regardless of rating button choice; no celebration; not added to local workoutHistory.
+- **LevelUpModal** — new `mobile/src/components/LevelUpModal.tsx`. Full-screen overlay, achievement-icon scale pulse via reanimated, "Advance to {NextLevel}" (boxing-red filled) + "Stay at {CurrentLevel}" (outlined). Success haptic on mount. Pure presentation — caller wires achievements + store mutations.
+- **HomeScreen cleanup** — `calculateLevelProgress` (the dead `workoutHistory.length / threshold * 100` formula) deleted. New `getUserStats` → `hydrateProgressionFromDb` hydration effect on userId-known (DB wins). `loadWorkout` passes `workoutMode` through to `generateWorkout`.
+- **ProfileScreen** — **demotion hint card** added between "Boxing Level" and "Your Streak" sections, renders only when `demotionWindow` contains 3+ `too_hard` AND boxingLevel ≠ beginner. Dark surface, gold border, gold-filled "Drop back to {previousLevel}" button. `handleLevelChange` hardened to call `hardResetProgression()` and write full reset to Supabase (nextLevelProgress=0, level_cap_staying_since=null, level_cap_too_easy_count_since_stay=0, demotion_window=[]). Removed dead `thresholds`/`progress` math.
+- **WorkoutModeToggle helper copy** — updated to v5 spec ("Classic — one combo with form coaching" / "Dynamic — combos rotate, real pad work").
+- **EF `CLAUDE.md` updated** — full v2 contract documented in `mobile/supabase/functions/punchpal-generate-workout/CLAUDE.md`.
+- **5 dead-code sites removed** — `evaluateLevelUp()` (DB service), `getRecommendedLevel()` (user service), `syncUserStats` hardcoded `nextLevelProgress: 0` reset, `calculateLevelProgress()` (HomeScreen), `formatNotationForSpeech` (TimerScreen).
+- **App icon swap** — `mobile/icon.png` replaced with new design (red boxing glove + gold PUNCHPAL text on black). `expo.icon` already pointed at it; added explicit `expo.android.adaptiveIcon.foregroundImage: "./icon.png"`. Caveat: Android adaptive masks may clip the bottom text on circular launcher icons.
+- **Final verification:** `npx tsc --noEmit` 0 errors; `bun test src/lib/__tests__/` 81 pass (59 combo-variations + 22 progression).
+
+**Late-session follow-ups (2026-05-22 PM):**
+
+- **iOS preview seed build** — `eas build --profile preview --platform ios`, build `651e3b70-df5a-4c04-bdf3-8a17a34807e0`. Cached Apple Developer credentials (cert + provisioning profile valid through Dec 2026, iPhone UDID `00008140-000465C02281401C` already registered) so non-interactive worked first try. Initial run failed on a DNS hiccup (`getaddrinfo ENOTFOUND api.expo.dev`); retry succeeded. Distributed via internal ad-hoc — install from the EAS dashboard URL.
+- **`expo-updates@29.0.17` wired** — installed via `npx expo install expo-updates`. `app.json` got `runtimeVersion: { policy: "appVersion" }` + `updates.url: https://u.expo.dev/61f19f38-1c99-48db-b8a7-d53d0238a8a5`. `eas.json` got `channel: <profile>` on dev/preview/production profiles. `App.tsx` got an explicit `Updates.checkForUpdateAsync()` useEffect at root (memory rule: default auto-check is unreliable on TestFlight). Channel `preview` auto-created during the iOS build per the EAS CLI log — no separate `eas channel:create` needed.
+- **First OTA push** — `eas update --branch preview --message "fix(timer): cycle dynamic combos via modulo; tighten gap 4000ms→2500ms"`. Update group `47321344-7f6a-4f33-a06a-cb875a7cc92e` published for both Android and iOS off the same source tree. Confirmed working end-to-end on user's device.
+
+**Dynamic-mode combo cycling bug (fixed via OTA same session):**
+
+- **Symptom (user report):** "combos stopped changing on dynamic mode at 1-2 combo" + "silence gap is too long".
+- **Root cause:** `fireDynamicCombo(idx)` had `if (idx >= combos.length) return;`. For a small beginner anchor like `1-2`, `generateVariations("1-2", 19, 1)` only produces ~5 unique pure-punch variations (`1`, `2`, `1-2b`, `1-2-3`, `1-2-5`) because tier-1 budget is 0 non-punch tokens AND several strategies (`bodifyMiddle`, `prefixJab`, tier-gated `insertSlipMid/Pivot/Roll`) bail out for short anchors. So `combos = [anchor, ...5 vars] = 6 items`. With `perCallMs ≈ 5.1s`, the loop exhausted at ~30s into a 180s round and the recursion returned silently. The card stayed frozen on the last fired combo for the remaining ~150s — which, due to the anchor-reannouncement logic placing the anchor at the slot closest to t=90s (index 5 — the LAST slot for "1-2"), was the anchor itself.
+- **Fix:** Replaced `if (idx >= combos.length) return;` with `if (combos.length === 0) return;`, then index via `effectiveIdx = idx % combos.length`. Termination now only happens via the existing wall-clock guard `elapsed > LATEST_DYNAMIC_FIRE_MS` (165s). Bumped `MAX_DYNAMIC_CALLS` 20→40 since cycling means re-visiting combos is expected. Also reduced `DYNAMIC_GAP_MS` from 4000ms → 2500ms (real iOS Siri speech is slower than the 400ms/word estimator, so effective silence with 4000ms was ~3s; 2500ms yields ~1.5s effective).
+- **Investigation method:** `/systematic-debugging` skill. Traced the bug by manually running `generateVariations("1-2", 19, 1)` against each strategy in the lib, counting valid outputs (5), then walking the `fireDynamicCombo` recursion to confirm the early-return triggered at idx=6. Cross-referenced the anchor-reannouncement logic to confirm why the FROZEN combo was specifically `1-2` (the anchor) rather than the last variation.
+
+**Files changed this session:**
+- `mobile/src/types/workout.ts` — `Combo`, `Reminder`, `Round`, `Tier`, `ReminderCategory` types; `WorkoutPlan.rounds: Round[]` (was number); new `tier`/`schemaVersion` fields
+- `mobile/src/lib/combo-variations.ts` — full v5 rewrite
+- `mobile/src/lib/__tests__/combo-variations.test.ts` — 42 new tests + 17 preserved
+- `mobile/src/lib/progression.ts` — NEW
+- `mobile/src/lib/__tests__/progression.test.ts` — NEW (22 tests)
+- `mobile/src/state/userStore.ts` — persist v2 migrate, progression fields, composite setters
+- `mobile/src/api/database-service.ts` — UserStats extended; `evaluateLevelUp` deleted; partial-update upsert
+- `mobile/src/api/user-service.ts` — `getRecommendedLevel` deleted; `syncUserStats` stripped of dead `nextLevelProgress: 0`
+- `mobile/src/api/workout-generator.ts` — EF v2 mapper, fallbacks converted to new shape, passes new EF inputs
+- `mobile/src/screens/TimerScreen.tsx` — full rewrite (hybrid Dynamic scheduler, distributed Classic reminders, progression hook on completion + early-exit)
+- `mobile/src/screens/HomeScreen.tsx` — `calculateLevelProgress` removed; DB hydration on userId-known
+- `mobile/src/screens/ProfileScreen.tsx` — demotion hint card; hardened manual override
+- `mobile/src/screens/WorkoutLibraryScreen.tsx` — `rounds.length` instead of `rounds` (the screen is still dormant)
+- `mobile/src/components/LevelUpModal.tsx` — NEW
+- `mobile/src/components/WorkoutCard.tsx` — `workout.rounds.length` instead of `workout.rounds`
+- `mobile/src/components/WorkoutModeToggle.tsx` — helper-copy update
+- `mobile/supabase/functions/punchpal-generate-workout/index.ts` — schema v2 EF rewrite
+- `mobile/supabase/functions/punchpal-generate-workout/CLAUDE.md` — v2 contract documentation
+- `mobile/supabase/functions/punchpal-migration-004/index.ts` — NEW (temp, deployed + invoked + still present pending cleanup)
+- `mobile/supabase/migrations/004_progression_columns.sql` — NEW (historical record)
+- `mobile/app.json` — explicit `android.adaptiveIcon.foregroundImage: "./icon.png"`; added `runtimeVersion: { policy: "appVersion" }` + `updates.url`
+- `mobile/icon.png` — new app icon (user-supplied)
+- `mobile/eas.json` — added `channel` to dev/preview/production profiles
+- `mobile/App.tsx` — explicit `Updates.checkForUpdateAsync()` on cold launch (gated by `Updates.isEnabled` so it's a no-op in Expo Go / dev client)
+- `mobile/package.json` + `bun.lock` — `expo-updates@29.0.17` added
+- `mobile/src/screens/TimerScreen.tsx` (second edit) — `fireDynamicCombo` modulo wrap; `DYNAMIC_GAP_MS` 4000→2500; `MAX_DYNAMIC_CALLS` 20→40
+- `tasks/todo.md` — Phase 1+2 plan + Review section
+- `tasks/lessons.md` — 2 new lessons appended
+- `coach-quotes.md` — new file at repo root, holds user-authored coach commentary harvested from his IG; first entry on `feint_jab` setup
+
+**Prior commits since last PROGRESS.md update (2026-05-15 → 2026-05-22):**
+- `85a2174` — wire Android AdMob app + ad unit IDs (real publisher `8632074296834726`)
+- `154ebb8` — reduce robotic Android TTS (Google Network voices picker + rate + onboarding tip)
+- `a4634b3` — fix Android scheduled notification (DAILY trigger; CALENDAR is iOS-only)
+- `a030f39` — **Phase 1 (v4) Dynamic mode** — first cut of Classic+Dynamic split with fixed 45/28/18s cadence and 2 fillers per round. Superseded by Phase 1+2 (v5) this session, which replaced the fixed cadence with the hybrid gap scheduler and added embedded defense/footwork/feint tokens.
+- `f5cf68f` — FORCE_TEST_ADS=true for preview build testing (memory rule: flip to false before App Store ship)
+
 **This session (2026-05-15 — auth deadlock root cause, real account deletion, signup UX fixes):**
 - **Sign-up indefinite spinner / Sign Out / Delete Account "nothing happens" — single root cause found** — all three symptoms traced to a circular await in supabase-js v2. `ProfileScreen.tsx` had `supabase.auth.onAuthStateChange(() => refresh())` where `refresh()` called `supabase.auth.getUser()`. supabase-js's `_notifyAllSubscribers` does `await Promise.all(callbacks)` while the original `updateUser`/`signUp` is still holding the auth lock — the subscriber's `getUser()` queued into `pendingInLock` waiting for that lock to release, but the lock holder was blocked on the subscriber. Classic deadlock. Verified by reading `node_modules/@supabase/auth-js/dist/main/GoTrueClient.js` and curl-testing the live signup endpoint (server-side responds in <1s). **Fix:** subscriber now uses the `session` arg passed to the callback directly — no auth method calls inside `onAuthStateChange` ever. Defense-in-depth `withTimeout` wrappers stay in place to catch any future deadlock.
 - **Account deletion now actually works server-side** — discovered TWO root causes by reading migrations: (1) `001_init_schema.sql` enables RLS with SELECT/INSERT/UPDATE policies but **no DELETE policy** on any of the 3 PunchPal tables. With deny-by-default RLS, client-side `supabase.from(TABLES.*).delete()` returns 200 OK with 0 rows affected — silent failure. (2) Auth row deletion requires `auth.admin.deleteUser()` which only the service role can call. Created new Edge Function `punchpal-delete-account` that validates the caller JWT, then uses `SUPABASE_SERVICE_ROLE_KEY` to delete the 3 data tables AND call `auth.admin.deleteUser`. Returns `{data_deleted, auth_deleted, ...errors}` so the client can degrade gracefully if a shared-project FK constraint blocks auth deletion. Client (`ProfileScreen.handleDeleteAccount`) now invokes the function once instead of 4 separate operations. Surfaces server-failure to the user via Alert before navigating, but always runs local cleanup. **End-to-end verified against live function** — fresh test user deleted in 2.8s, JWT immediately invalidated.
@@ -421,10 +595,28 @@ supabase functions deploy punchpal-generate-workout --project-ref zeskhorwddxyjh
 ## Known Issues / TODO
 
 ### Outstanding before v1.1.0 ships smoothly
+- ~~**Deploy updated `punchpal-generate-workout` EF**~~ ✅ Deployed 2026-05-22. Smoke-tested: Classic intermediate (schema v2, 10 rounds, descriptions + 3 reminders), Dynamic advanced (tier 8, embedded feints/defense/footwork/shuffles, body shots), Dynamic beginner (tier 1, pure-punch only — validator enforced).
+- ~~**iOS preview build**~~ ✅ Built 2026-05-22 (`651e3b70-df5a-4c04-bdf3-8a17a34807e0`) and OTA wired.
+- ~~**Dynamic combo cycling bug**~~ ✅ Fixed + OTA pushed + user-confirmed working.
+- ~~**Delete temp migration EF** `punchpal-migration-004`~~ ✅ Local function directory already removed; only `punchpal-delete-account` + `punchpal-generate-workout` present under `mobile/supabase/functions/`. Remote dashboard cleanup is unverified but the function is no longer deployable from the repo.
+- ~~**Variety signal weak — workouts feel repetitive on regen**~~ ✅ Fixed 2026-05-24. Always-on variety block; raw notations not hashes; mobile push on generate; per-tier variety strategies; temp 0.9. OTA `87f1b6bd-3832-490d-98ad-a04b762bf071`.
+- ~~**Classic↔Dynamic toggle keeps stale workout**~~ ✅ Fixed 2026-05-24. Auto-regen via `freshWorkoutAd` interstitial when stored mode mismatches. OTA `aa274e0d-765b-4a40-9f21-aa471cd48de1`.
+- ~~**Phase 4.1 adaptive learning**~~ ✅ Shipped 2026-05-24 PM. Per-anchor rating telemetry to `punchpal_combo_progress`; EF prompt receives struggle + success lists; cold-start gated at ≥5 rated workouts. OTA `19d08c0f-baf4-4380-8687-b9286186331a`. Migration 005 applied via temp EF.
+- **Delete temp migration EF** `punchpal-migration-005` — local file at `mobile/supabase/functions/punchpal-migration-005/` and remote function on Supabase. Migration applied 2026-05-24 PM, function purpose fulfilled.
+- ~~**Stale `extra.grokApiKey` reference in `app.json`**~~ ✅ Not present in current `app.json` (verified 2026-05-24).
+- **Flip `FORCE_TEST_ADS=false`** in `mobile/src/lib/ads.ts` before App Store submission. Currently `true` for preview-build testing per `f5cf68f`.
+- **EAS dev-build manual testing of Phase 1+2** — verification list in `tasks/todo.md`:
+  - Classic round: bell+anchor t=0, description t=5, reminders distributed [30s..160s], bells t=170/180
+  - Dynamic round: bell+anchor t=0, no intro, ~4s gap between combos, anchor reannouncements at ~90s/153s
+  - Embedded tokens (slip_*, pivot*, feint_*) read naturally via TTS at intermediate+
+  - Rate Too Easy 7× at beginner → celebration → tap Advance → level=intermediate, progress=carry; achievement `level_up_inter` unlocks
+  - Tap Stay at progress=100 → EF receives `at_level_cap: true`; Too Easy ×3 more → celebration re-fires
+  - Rate Too Hard 3 of 5 at intermediate → Profile shows demotion hint card; tap reverts cleanly
+  - Pause mid-round in both modes → resume re-anchors with no double-fires
+- **Android adaptive icon visual check** — icon's bottom "PUNCHPAL" text may clip on circular Android launcher masks. If clipping is visible on test device, swap `adaptiveIcon.foregroundImage` to a glove-only PNG and keep the full square as `expo.icon`.
 - **Run production build & submit** — `eas build --profile production --platform ios --auto-submit` (interactive Apple login on first run)
 - **Publish `app-ads.txt`** on marketing site root with `google.com, pub-8632074296834726, DIRECT, f08c47fec0942fa0`. AdMob fill rate throttled until live and crawled.
 - **Update App Privacy questionnaire** in App Store Connect → PunchPal AI Coach → App Privacy. Declare AdMob's data types under "Third-Party Advertising".
-- **Stale `extra.grokApiKey` reference in `app.json`** — leftover from Vibecode; harmless but worth deleting next time app.json is edited
 - **Delete orphan empty Expo project** `@crisguido/punchpal` (mistakenly created during `eas init --force`). Settings → Delete Project in the dashboard.
 - **Orphaned anonymous Supabase users** — accumulated from app launches before the AsyncStorage session-persistence fix. Each cold launch created a fresh anonymous user. Clean up via Supabase dashboard → Authentication → Users when convenient. Not blocking. (Note: the new `punchpal-delete-account` Edge Function does NOT retroactively clean these up — it only fires when the user taps Delete Account in-app.)
 - **Real-user account deletion may partially fail on shared project** — `auth.admin.deleteUser()` can fail with "Database error deleting user" if another Stratega app's table has a FK to `auth.users` without `ON DELETE CASCADE`. Edge Function returns 200 with `auth_deleted: false, auth_error: "..."` and the user data IS gone. If this surfaces, query `pg_constraint WHERE confrelid = 'auth.users'::regclass` to find the offending FK (cross-app concern, fix in the owning app's migrations).
@@ -473,6 +665,24 @@ supabase functions deploy punchpal-generate-workout --project-ref zeskhorwddxyjh
 - **Account deletion via Edge Function, not client-side cascade** — chose a single service-role Edge Function over "add DELETE RLS policies + keep deletes client-side" because: client still cannot call `auth.admin.deleteUser` (service role only), one round trip beats four, and service role bypasses RLS so no policy migrations needed. Returns partial-success metadata so client can degrade gracefully on shared-project FK blocks.
 - **Never call `supabase.auth.*` inside `onAuthStateChange` callbacks** — supabase-js awaits each subscriber's returned promise while still holding its internal auth lock. Any auth method call from inside the callback queues into `pendingInLock` and deadlocks the original signUp/updateUser. Use the `session` arg passed to the callback instead. If you absolutely need a method call, wrap in `setTimeout(..., 0)` to defer past the lock release.
 - **Anon-upgrade success criteria differs from new-signup** — `updateUser({email, password})` keeps the existing session valid and returns `{ data: { user } }` without a session field. New `signUp` with email confirmations off returns both `user` and `session`. Branching on the actual call path is required to avoid spurious "check your email" messages when the user is already signed in.
+- **Rating-driven progression replaces static workout-count formula (v1.1.0)** — old code computed `nextLevelProgress = workoutCount / threshold * 100` at HomeScreen mount, so leveling up was a function of raw consistency rather than perceived difficulty. v5 progression makes every workout outcome add points (15/10/5/8/2 for too_easy/just_right/too_hard/skipped/early_exit). Crossing 100 triggers a celebration modal; the user chooses Advance or Stay. Cross-level advancement is **never silent or automatic** — it requires explicit user tap on a modal so the user owns the difficulty step.
+- **Demotion is hint-only, never auto-applied** — chose the safety net to be passive (Profile card surfaces when 3+ of last 5 ratings are too_hard at non-beginner level). User taps to demote. Reason: auto-demotion after a temporary slump would feel patronizing; the card disappears once their next 2-3 ratings improve.
+- **Hybrid gap scheduler for Dynamic mode** — instead of fixed 25/17/12s cadence (originally specced in v4), Dynamic uses estimated speech duration + 4s gap per combo. Primary `setTimeout` fires regardless to guarantee no stalls (Android `Speech.onDone` is unreliable per memory). `onDone` is a refinement: early = no-op (primary handles), late = cancel + force 4s gap, or accept overlap if primary already fired. Trade-off: gap may be >4s when speech is short and primary timer dominates, but it's never less than ~4s which is the user-perceptible "tactical beat" we want.
+- **Embedded defense/footwork/feints in combo notation (single source of truth)** — instead of side-channel cues, the combo notation itself carries the moves (e.g., `1-2-slip_right-3`). Consumers parse and expand. This means the EF, mobile, and tests all share one grammar and one expander. Tier respect lives in the variation generator (tier 1-3 punches only, tier 4-6 ≤2 non-punches per variation, tier 7-9 ≤3).
+- **Cap-state combo-pattern rotation tracked + sent to Claude** — at the cap, `recent_combo_signatures` (last 10 FNV-1a hashes of canonical notations) goes into the EF prompt with instruction to avoid hash collisions. Implementation note: Claude doesn't actually run hash functions, so this is a hint signal that biases output toward novelty. If telemetry shows repeats, switch to a deterministic combo bank sampler.
+- **App icon kept as full-bleed composite for both platforms (Phase 1+2 ship)** — same `./icon.png` used for `expo.icon` (iOS + Android legacy) AND `android.adaptiveIcon.foregroundImage`. iOS gets the full square unscathed; Android adaptive will scale (not crop) to fit the safe zone. Trade-off: bottom "PUNCHPAL" text may be clipped by circular Android launcher masks. Acceptable for v1.1.0 launch; revisit after first user feedback.
+- **Dynamic combo rotation cycles via modulo, not finite array exhaustion** — small anchors generate small variation pools (`1-2` → 5 variations). Rather than padding the variation generator to always return N combos (would force unrealistic strategies for short anchors), we cycle through whatever was generated until the wall-clock guard fires. Real pad-work coaches reuse combos throughout the round anyway, so the cycling matches the mental model.
+- **`DYNAMIC_GAP_MS = 2500ms` (was 4000ms)** — v5 spec called for 4000ms post-speech gap, but the 400ms/word speech estimator under-counted real iOS Siri speech (which runs ~600-700ms/word at rate 0.95 for male voices). Effective silence at 4000ms was ~3s, which user found sluggish. 2500ms yields ~1.5s effective silence — closer to real pad-work cadence. If still too slow under further testing, drop to 2000ms or make it tier-aware (faster at advanced like real coaches).
+- **OTA via `expo-updates` for JS-layer iteration, full rebuild only when native deps change** — added expo-updates at the Phase 1+2 ship point so subsequent JS/JSX/TS fixes land via `eas update` (~30 sec) instead of full rebuild (~25 min). The first real test of this loop happened same session: Dynamic-combo bug found via testing → modulo + gap fix → OTA push → user cold-launches → fixed. End-to-end iteration time ~5 min, vs ~30+ min for a rebuild cycle.
+- **Variety signal is always-on, not cap-only (2026-05-24)** — previous design only sent `recent_combo_signatures` to Claude when `at_level_cap === true`. Reasoning was "cap-state needs extra variety pressure." In practice users felt repetition everywhere, not just at the cap. Always-on signal is structurally correct: any time we have a non-empty avoid list, Claude should see it. The cap directive is now a *layered* extra ("at the cap, ALSO lean into upper-tier complexity"), not the only place the avoid list appears.
+- **`recent_combo_signatures` stores raw notations, not hashes (2026-05-24)** — Claude can't run hash functions, so FNV-1a hashes in the prompt were unusable noise. Switched to raw notation strings (e.g. `"1-2-slip_right-3"`). Column name kept for back-compat; existing 8-char hex entries are sent to Claude as opaque-strings-to-avoid which is harmless and the ring buffer self-heals in 10 workouts.
+- **Variety push fires on workout *generation*, not just completion (2026-05-24)** — `pushComboSignatures` originally only fired in `TimerScreen.finishWorkout`. So if the user spammed "Get Fresh Workout" without playing, the avoid list never updated and every regen received identical inputs → near-identical outputs. Moved the push to `HomeScreen.loadWorkout` (still fires on completion too; the buffer dedups so double-pushing is idempotent).
+- **Auto-regenerate the workout when the user toggles mode (2026-05-24)** — `WorkoutPlan` now carries `mode: WorkoutMode`. HomeScreen watches the Zustand mode and, on mismatch with the persisted workout's mode, fires `freshWorkoutAd.show(() => loadWorkout())` — same path as the manual Get Fresh button. The 30s ad-frequency cap doubles as toggle-spam debounce. `lastAppliedModeRef` prevents auto-regen on cold launch / hydration. Initial cut had `if (!currentWorkout.mode) return` which skipped pre-fix persisted workouts; user testing surfaced the gap and we shipped a follow-up that triggers regen even on `mode === undefined` so users heal immediately on first toggle.
+- **`WorkoutMode` type lives in `types/workout.ts`, re-exported from `userStore.ts`** — moved to avoid the circular-import risk when adding `mode` to `WorkoutPlan` (types/workout.ts → state/userStore.ts → types/workout.ts cycle).
+- **Adaptive learning derived from RATINGS, not skips (2026-05-24 PM)** — v5 spec gated Phase 4.1 on Skip Combo telemetry, but user cut Skip Combo from scope. Rating data was already being captured and never aggregated per-combo; activating `punchpal_combo_progress` rating-count columns replaces the skip signal. Argument for ratings over skips: intentional user feedback > noisy implicit signal (users skip for many reasons, including just wanting variety).
+- **Atomic Postgres RPC for upsert+increment, not client-side check-then-write (2026-05-24 PM)** — `punchpal_record_combo_rating` uses `INSERT … ON CONFLICT DO UPDATE` server-side. Avoids the SELECT-then-INSERT race (two concurrent sessions could both think "no row exists" and INSERT twice). Pattern: any per-user-per-thing increment counter should be wrapped in a Postgres function the client calls via `supabase.rpc()`. The old `updateComboProgress` helper (still in `database-service.ts`, unused) demonstrates the check-then-write anti-pattern.
+- **Cold-start gating on adaptive signal (≥5 rated workouts, 2026-05-24 PM)** — a 1-workout user has zero useful signal and the difficulty block would be mostly noise. The cold-start gate is checked in `workout-generator.ts` (skip the signal queries entirely when `workoutHistory < 5`), not in the EF, because the EF can't tell "early user with 0 data" from "long-time user with no current struggles." Client owns the gating semantics.
+- **`difficultyBlock` layered between variety and cap (2026-05-24 PM)** — final user-prompt order: tier → history → personalization → variety (don't repeat last week) → difficulty (avoid patterns you struggle with) → cap. The two signals are complementary: variety is recency-based, difficulty is rating-based.
 
 ---
 
@@ -487,6 +697,10 @@ Saved to user-global memory (`~/.claude/projects/<...>/memory/`):
 - **Prefer `getSession()` over `getUser()` in client code paths**: getUser() does a server roundtrip and acquires the auth lock; getSession() reads the cached JWT instantly with no lock. The `is_anonymous` flag and user id are already in the cached JWT.
 - **NEVER call `supabase.auth.*` inside `onAuthStateChange` callbacks**: supabase-js v2 awaits subscriber callbacks while still holding the auth lock; calling getUser/getSession/updateUser/signOut from in here deadlocks signUp/updateUser/signInWithPassword. Use the `session` arg directly.
 - **Missing DELETE RLS policy fails silently**: RLS is deny-by-default; without a DELETE policy, `.delete()` returns 200 with 0 rows and no error. Audit every table you call `.delete()` on, or funnel deletes through an Edge Function with service role.
+- **Don't clamp computed progression values inside Zustand setters when overflow matters downstream**: The level-up carry math depends on receiving raw `newProgress > 100` so handleAdvance can compute the post-level starting progress (`max(0, raw - 100)`). The store's `applyProgressionResult` originally clamped to 100, which lost the carry. Fixed by removing the upper clamp — `progression.ts` already pins at 100 for staying/advanced users, so the only uncapped path is the organic level-up crossing, which is exactly when we need the raw value.
+- **Keep strict `parse()` separate from tolerant `tryParse()` when extending a notation grammar**: Tests for legacy expanders/hashers/generators rely on "return empty on bad input" semantics. If `parse()` throws strictly per the spec, layer `expandForSpeech`/`hashCombo`/`generateVariations` on top of an internal `tryParse` so the existing v4 test corpus keeps passing while new tests can assert on the strict errors. Saved a v5 rewrite that would have broken 17 prior tests.
+- **When implementing a rotating-pool scheduler against a finite generator, ALWAYS cycle modulo — never index-bound-check + early return**. If your variation generator might produce fewer items than your scheduler wants (which happens whenever inputs are constrained — tier limits, small anchors, validity gates), an `if (idx >= pool.length) return;` will silently exit the loop mid-round instead of cycling through what you have. Wall-clock termination is the correct stop signal, not array length. Symptom: works for big inputs, mysteriously dies for small ones, especially in production where small inputs (beginner tier `1-2`) are the COMMON case.
+- **Speech-duration estimators need real-device calibration, not just spec defaults**. `400ms/word iOS / 435ms Android` was a reasonable first guess but iOS Siri male voices at rate 0.95 run closer to 600-700ms/word. Downstream timers calibrated against the under-estimate make silence gaps feel longer than intended. Fix: either calibrate estimator from device telemetry, or apply a safety multiplier (~1.5x). For PunchPal we kept the estimator as-is but shortened the explicit gap (`DYNAMIC_GAP_MS`) to compensate.
 
 ---
 
