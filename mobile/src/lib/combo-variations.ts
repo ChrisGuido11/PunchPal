@@ -170,21 +170,20 @@ export function parse(notation: ComboNotation): Token[] {
     tokens.push(tok);
   }
 
+  // Consecutive non-punch tokens are NOW ALLOWED (intermediate+) so a real
+  // coach pattern like "1-2-slip_right-roll_left-3" parses. The max-3
+  // non-punch cap below still prevents abuse, and the biomechanical
+  // validator (server-side) only checks defense → immediately-following
+  // punch pairings — defenses chained together don't constrain each other.
   let nonPunchCount = 0;
-  let prevWasNonPunch = false;
   let hasPunch = false;
   for (let i = 0; i < tokens.length; i++) {
     const t = tokens[i];
-    const isPunch = t.kind === "punch";
-    if (isPunch) {
+    if (t.kind === "punch") {
       hasPunch = true;
     } else {
       nonPunchCount++;
-      if (prevWasNonPunch) {
-        throw new Error("two consecutive non-punch tokens");
-      }
     }
-    prevWasNonPunch = !isPunch;
   }
   if (!hasPunch) throw new Error("combo must contain at least one punch");
   if (tokens[tokens.length - 1].kind !== "punch") {

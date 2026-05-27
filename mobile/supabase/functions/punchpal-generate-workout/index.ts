@@ -132,17 +132,16 @@ function parseCombo(notation: string): Token[] | null {
     if (!tok) return null;
     tokens.push(tok);
   }
+  // Consecutive non-punch tokens are ALLOWED at intermediate+ (chained
+  // defenses/footwork like slip_right-roll_left or slip-then-pivot). The
+  // max-3 non-punch cap below still prevents abuse, and the biomechanical
+  // validator only checks defense → IMMEDIATELY-FOLLOWING punch pairs, so
+  // chains work correctly.
   let nonPunch = 0;
-  let prevNonPunch = false;
   let hasPunch = false;
   for (const t of tokens) {
-    const isPunch = t.kind === "punch";
-    if (isPunch) hasPunch = true;
-    else {
-      nonPunch++;
-      if (prevNonPunch) return null;
-    }
-    prevNonPunch = !isPunch;
+    if (t.kind === "punch") hasPunch = true;
+    else nonPunch++;
   }
   if (!hasPunch) return null;
   if (tokens[tokens.length - 1].kind !== "punch") return null;
@@ -447,7 +446,7 @@ Embedded feint tokens (6, intermediate+ only):
 GRAMMAR RULES (MANDATORY — invalid combos will be rejected server-side and regenerated):
 1. Tokens are joined with "-" hyphens. Example: "1-2-slip_right-3".
 2. Combos must END with a punch token. "1-2-slip_right" is INVALID.
-3. Two non-punch tokens may NOT appear consecutively — there must be a punch between any two non-punch tokens. "1-slip_right-pivot_left-2" is INVALID; "1-slip_right-2-pivot_left-3" is valid.
+3. Consecutive non-punch tokens are ALLOWED at intermediate+ tiers to model real-coach defensive chains (e.g. "1-2-slip_right-roll_left-3" — slip a counter, roll under the next, then commit the lead hook). Each non-punch in the chain is independently legal as long as the MAX 3 non-punch cap holds. The biomechanical rule applies only to the defense token IMMEDIATELY before a punch (in the example above: roll_left → 3, lead-load → lead hook ✓). Beginner combos remain pure-punch (no embedded tokens whatsoever).
 4. Total tokens per combo: maximum 8.
 5. Non-punch tokens per combo: maximum 3.
 6. Beginner-tier combos (T1-T3) contain ONLY punches with optional "b" suffix — NO defense, footwork, or feint tokens whatsoever. Server will reject these.

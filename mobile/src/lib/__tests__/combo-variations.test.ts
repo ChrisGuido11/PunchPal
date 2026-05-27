@@ -249,9 +249,10 @@ describe("parse (v5 grammar)", () => {
     expect(() => parse("1-pivot_left")).toThrow();
   });
 
-  test("rejects two consecutive non-punches (§7.3)", () => {
-    expect(() => parse("1-slip_left-pivot_right-2")).toThrow();
-    expect(() => parse("feint_jab-pivot_left-2")).toThrow();
+  test("accepts chained non-punch tokens (relaxed grammar)", () => {
+    // Real-coach chain: slip then pivot, then punch.
+    expect(parse("1-slip_left-pivot_right-2").length).toBe(4);
+    expect(parse("feint_jab-pivot_left-2").length).toBe(3);
   });
 
   test("rejects more than 3 non-punch tokens (§7.3)", () => {
@@ -320,8 +321,8 @@ describe("expandForSpeech (v5 embedded tokens)", () => {
   });
 
   test("returns empty for invalid grammar", () => {
-    expect(expandForSpeech("1-slip_left-pivot_right-2")).toBe(""); // consecutive non-punch
     expect(expandForSpeech("slip_left")).toBe(""); // no punch
+    expect(expandForSpeech("1-2-3-bogus")).toBe(""); // unknown token
   });
 });
 
@@ -653,6 +654,21 @@ describe("footwork variety — within-round rotation", () => {
       }
     }
     expect(conflicts).toEqual([]);
+  });
+
+  test("parser accepts chained non-punch tokens (slip_right-roll_left)", () => {
+    // Real-coach pattern: 1-2 jabs, slip the incoming counter, roll under
+    // the next, then commit the lead hook. Two consecutive non-punches in
+    // the middle. Used to be rejected; should now parse cleanly.
+    const tokens = parse("1-2-slip_right-roll_left-3");
+    expect(tokens.length).toBe(5);
+    expect(tokens[2]).toEqual({ kind: "defense", move: "slip_right" });
+    expect(tokens[3]).toEqual({ kind: "defense", move: "roll_left" });
+    expect((tokens[4] as { n: number }).n).toBe(3);
+  });
+
+  test("parser still caps non-punch tokens at 3", () => {
+    expect(() => parse("1-slip_right-roll_left-pivot_right-step_in-3")).toThrow();
   });
 
   test("advanced anchor with slip_right also produces a roll_right variation", () => {
