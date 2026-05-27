@@ -469,8 +469,13 @@ describe("generateVariations (tier)", () => {
   test("preserves at least one embedded move from anchor (intermediate)", () => {
     const result = generateVariations("1-2-slip_right-3", 9, 5);
     for (const v of result) {
-      // Each variation must contain slip_right (the anchor's only embedded move).
-      expect(v.includes("slip_right")).toBe(true);
+      // Family-based preservation: any slip/roll variant counts (slip_right,
+      // slip_left, roll_right, roll_left all share the defense_slip_roll
+      // family in moveFamily). The biomechanical validator ensures
+      // direction-flipped variants pair with the correct punch hand.
+      const hasSlipOrRoll =
+        v.includes("slip_") || v.includes("roll_");
+      expect(hasSlipOrRoll).toBe(true);
     }
   });
 

@@ -231,7 +231,7 @@ const levelGuidelines: Record<
     tempo:
       "Faster pace, fluid combinations. Start incorporating rhythm changes and feints.",
     examples:
-      "1-2-4 (Jab-Cross-Rear Hook), 1-2-3-4 (Jab-Cross-Lead Hook-Rear Hook — the four-punch staple), 1-4-3-2 (Jab-Rear Hook-Lead Hook-Cross), 1-2-3-2 (Jab-Cross-Lead Hook-Cross), 1-2b-3 (Jab-Cross body-Lead Hook head), 1-6-3-2b (Jab-Rear Uppercut-Lead Hook-Cross body), 1-2-slip_right-4 (slip right into rear hook — slip loads rear hip), 2-slip_left-3 (slip left into lead hook — slip loads lead hip), 1-pivot_right-2-3, feint_jab-2b-3 (fake jab → body cross to exploit raised guard), feint_high-2b (high fake → body cross), feint_low-1-3 (low fake → jab → lead hook to head), feint_cross-3b-2",
+      "1-2-4 (Jab-Cross-Rear Hook), 1-2-3-4 (Jab-Cross-Lead Hook-Rear Hook — the four-punch staple), 1-4-3-2 (Jab-Rear Hook-Lead Hook-Cross), 1-2-3-2 (Jab-Cross-Lead Hook-Cross), 1-2b-3 (Jab-Cross body-Lead Hook head), 1-6-3-2b (Jab-Rear Uppercut-Lead Hook-Cross body), 1-2-slip_right-4 (slip right into rear hook — slip loads rear hip), 2-slip_left-3 (slip left into lead hook — slip loads lead hip), 1-pivot_right-2-3, feint_jab-2b-3 (fake jab → body cross → lead hook), feint_cross-3b-2 (fake cross → body lead hook → cross), feint_hook-2-3 (fake hook → cross → lead hook), feint_uppercut-1-3b (fake uppercut → jab → body lead hook)",
   },
   advanced: {
     focus:
@@ -249,7 +249,7 @@ const levelGuidelines: Record<
     tempo:
       "Variable pace - explosive bursts, calculated pressure, rhythm breaks. Simulated fight scenarios.",
     examples:
-      "1-2-slip_right-4-pivot_right-6 (slip right loads rear → rear hook → pivot right exit), 1-2-slip_left-3-pivot_left-5 (slip left loads lead → lead hook → pivot left exit), feint_jab-2b-3b-4 (fake jab, body cross, body lead hook, finish rear hook upstairs), feint_high-2b-3-4 (high fake → body cross → lead hook to head → rear hook), feint_low-1-3-2 (low fake → head jab → lead hook → cross), 1-2-roll_right-4-shuffle_left-2 (Lomachenko angle, roll right → rear hook), 2-slip_left-3-roll_right-2 (mirror counter — slip lead, then roll rear), 1-pivot_right-2-4-3 (open angle with pivot right, finish with rear hook + lead hook), feint_cross-3b-2-4 (fake cross to draw the parry, body hook, cross, rear hook finish)",
+      "1-2-slip_right-4-pivot_right-6 (slip right loads rear → rear hook → pivot right exit), 1-2-slip_left-3-pivot_left-5 (slip left loads lead → lead hook → pivot left exit), feint_jab-2b-3b-4 (fake jab, body cross, body lead hook, finish rear hook upstairs), feint_cross-3b-2-4 (fake cross, body lead hook, cross, rear hook finish), feint_hook-2-3b-4 (fake hook, cross, body lead hook, rear hook), feint_uppercut-1-2-3b (fake uppercut, jab, cross, body lead hook), 1-2-roll_right-4-shuffle_left-2 (Lomachenko angle, roll right → rear hook), 2-slip_left-3-roll_right-2 (mirror counter — slip lead, then roll rear), 1-pivot_right-2-4-3 (open angle with pivot right, finish with rear hook + lead hook), feint_cross-3b-2-4 (fake cross to draw the parry, body hook, cross, rear hook finish)",
   },
 };
 
@@ -522,6 +522,7 @@ CRITICAL RULES:
    - VALID: "1-slip_right-2-3" (rear cross fires off the loaded rear hip, then lead hook).
    - VALID: "1-2-slip_left-3" (slip left loads lead, lead hook fires from the loaded lead hip).
    The server will reject any round whose anchor violates this rule. Block_*/parry_*/pivot_*/step_*/shuffle_* are NOT subject to this rule.
+   SLIP DIRECTION BALANCE (workout-level): if multiple rounds use slip or roll, mix the directions. slip_right and slip_left should appear with roughly equal frequency across the workout (same for roll). A real coach mixes both sides — never call slip right for the whole workout while ignoring slip left. No single slip direction may dominate more than 60% of slip-using rounds.
 
 11. REAR HOOK (#4) PARITY (MANDATORY for intermediate / advanced). The rear hook is core boxing arsenal and has been historically underrepresented in generated workouts. At intermediate and advanced, at LEAST 30% of the anchor combos in the workout MUST contain a #4 (with or without "b"). Treat #4 with equal weight to #3 — don't default to the lead hook every time. Many of the canonical pro-fighter combos prominently feature the rear hook (1-2-4, 1-3-4, 1-4-3-2, 2-3-4, etc.).
 
@@ -531,17 +532,17 @@ CRITICAL RULES:
    - Mix the FAMILIES (pivot, step, shuffle) — don't make every round a pivot round. If 3+ rounds need embedded footwork, use at least 2 distinct families across them.
    - This is what makes Dynamic mode feel improvisational rather than scripted.
 
-13. FEINT MECHANICS (MANDATORY, server-validated). A feint is body language that draws a reaction — you fake a punch (or a level) to make the opponent move their guard, then exploit the opening.
+13. FEINT MECHANICS (MANDATORY, server-validated). A feint is body language that draws a reaction — you fake a punch to make the opponent move their guard, then exploit the opening.
+   - Allowed feint tokens: feint_jab, feint_cross, feint_hook, feint_uppercut. DO NOT use feint_high or feint_low — they are deprecated (the speech "feint high" / "feint low" confuses users; always name a specific punch).
    - The feinted punch type MUST NOT be the punch thrown immediately after the feint:
-       feint_jab → next punch ≠ 1 (don't fake a jab and throw a jab)
+       feint_jab → next punch ≠ 1
        feint_cross → next punch ≠ 2
-       feint_hook → next punch ≠ 3 AND ≠ 4 (lead OR rear hook)
+       feint_hook → next punch ≠ 3 AND ≠ 4
        feint_uppercut → next punch ≠ 5 AND ≠ 6
-   - feint_high MUST be followed by a body shot (the "b" suffix). The high fake makes the opponent raise their guard, so the follow targets the now-open ribs/liver.
-   - feint_low MUST be followed by a head shot (no "b" suffix). The low fake makes the opponent drop their hands, so the follow comes upstairs.
-   - VALID: feint_jab-2b-3 (fake jab, exploit raised guard with body cross, follow with lead hook), feint_high-2b-3 (high fake → body cross), feint_low-1-3b (low fake → head jab → body hook), feint_cross-3b-2, feint_hook-2-3.
-   - INVALID: feint_jab-1-2-3 (faking a jab then throwing the same jab is redundant — the user logged this exact bug), feint_high-2-3 (high fake demands a body follow), feint_low-1b (low fake demands a head follow).
-   - FEINT VARIETY (workout-level): same parrot-repeat rule as footwork. No single feint type may appear in more than 2 anchor combos across the workout. Rotate across feint_jab / feint_cross / feint_hook / feint_uppercut / feint_high / feint_low — they teach different setups and reactions.
+   - LEVEL MIX (workout-level): mix follow-up TARGETS across the workout. A feint to a head punch ideally draws the guard UP — so the follow-up is often a body shot ("b" suffix). A different round can mix the opposite — fake a hook (which the opponent expects from the side) and follow with a straight to the head. Don't make every feint round produce body shots; vary the follow-up level so the workout teaches both reactions.
+   - VARIETY (workout-level): same parrot-repeat rule as footwork. No single feint type may appear in more than 2 anchor combos in one workout. Rotate across feint_jab / feint_cross / feint_hook / feint_uppercut.
+   - VALID: feint_jab-2b-3 (fake jab → body cross → lead hook), feint_cross-3b-2 (fake cross → body lead hook → straight cross to head), feint_hook-2-3 (fake hook → cross → lead hook), feint_uppercut-1-3b.
+   - INVALID: feint_jab-1-2-3 (same-punch redundancy), feint_high-anything (forbidden token), feint_low-anything (forbidden token).
 
 ROUND-ANCHOR PAIRING (MANDATORY): rounds.length MUST match the number of rounds you produce. Each round has ONE distinct anchor combo (the user drills that anchor for the full round in Classic, and the client generates variations from it in Dynamic). round_number starts at 1 and increments. The "duration" field is total minutes (integer) and should equal rounds.length * 3.`;
 }
@@ -903,12 +904,13 @@ function validateAndFixRound(
       if (wantRear !== isRear) return null;
     } else if (t.kind === "feint") {
       const f = t.move;
+      // Deprecated feints — reject the round entirely. Speech "feint high" /
+      // "feint low" confuses users; only specific-punch feints are allowed.
+      if (f === "feint_high" || f === "feint_low") return null;
       if (f === "feint_jab" && next.n === 1) return null;
       if (f === "feint_cross" && next.n === 2) return null;
       if (f === "feint_hook" && (next.n === 3 || next.n === 4)) return null;
       if (f === "feint_uppercut" && (next.n === 5 || next.n === 6)) return null;
-      if (f === "feint_high" && !next.body) return null;
-      if (f === "feint_low" && next.body) return null;
     }
   }
 

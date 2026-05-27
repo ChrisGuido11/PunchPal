@@ -88,8 +88,18 @@ function moveFamily(move: string): string {
     return "footwork";
   }
   if (move.startsWith("feint_")) return "feint";
-  if (move === "slip_right" || move === "roll_right") return "defense_rear";
-  if (move === "slip_left" || move === "roll_left") return "defense_lead";
+  // All slip/roll variants share one family. Direction (left/right) gets
+  // varied by `swapSlipDirection` below, which also flips the next punch's
+  // hand to keep the biomechanical rule satisfied — so slip_right + 2 can
+  // become slip_left + 1 inside the same round. Block/parry stay exact.
+  if (
+    move === "slip_right" ||
+    move === "slip_left" ||
+    move === "roll_right" ||
+    move === "roll_left"
+  ) {
+    return "defense_slip_roll";
+  }
   return move;
 }
 
@@ -618,13 +628,16 @@ const swapFootworkFamilyAlt: Strategy = (tokens, tier) => {
 // An anchor with feint_jab needs variations using feint_cross / feint_hook /
 // etc. so a 3-minute Dynamic round doesn't feel like one feint on loop.
 
+// Active feint pool — only the specific-punch feints. feint_high and
+// feint_low are parser-legal (existing user combos may still reference them)
+// but excluded from new generation because the speech "feint high" / "feint
+// low" confuses users ("high what?"). All TTS-facing feints now name the
+// punch directly: "feint jab", "feint cross", "feint hook", "feint uppercut".
 const FEINT_CYCLE: FeintMove[] = [
   "feint_jab",
   "feint_cross",
   "feint_hook",
   "feint_uppercut",
-  "feint_high",
-  "feint_low",
 ];
 
 // Try to swap a feint to a different type, advancing through the cycle until
@@ -665,6 +678,44 @@ const swapFeintTypeAlt: Strategy = (tokens, tier) => {
   if (feintIdx < 0) return null;
   // Different starting offset so a second distinct variation comes out.
   return trySwapFeint(tokens, feintIdx, 2);
+};
+
+// Defense DIRECTION swap (tier 4+). Anchor with slip_right-rear-punch yields
+// variation with slip_left-lead-punch (and vice versa). The biomechanical
+// rule is preserved because we flip BOTH the slip direction AND the
+// following punch's hand. Fixes the parrot-repeat where a round only ever
+// called "slip right" — now the user hears both directions inside one round.
+// Mirror map: jab ↔ cross (1↔2), lead hook ↔ rear hook (3↔4), uppercuts (5↔6).
+const PUNCH_HAND_MIRROR: Record<number, number> = {
+  1: 2,
+  2: 1,
+  3: 4,
+  4: 3,
+  5: 6,
+  6: 5,
+};
+
+const swapSlipDirection: Strategy = (tokens, tier) => {
+  if (tier === undefined || tier < 4) return null;
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const t = tokens[i];
+    if (t.kind !== "defense") continue;
+    if (!t.move.startsWith("slip_") && !t.move.startsWith("roll_")) continue;
+    const next = tokens[i + 1];
+    if (next.kind !== "punch") continue;
+    const isRight = t.move.endsWith("_right");
+    const technique = t.move.startsWith("slip_") ? "slip" : "roll";
+    const newMove =
+      `${technique}_${isRight ? "left" : "right"}` as DefenseMove;
+    const mirrored = PUNCH_HAND_MIRROR[next.n] as Punch["n"];
+    return tokens.map((tok, idx) => {
+      if (idx === i) return { kind: "defense" as const, move: newMove };
+      if (idx === i + 1)
+        return { kind: "punch" as const, n: mirrored, body: next.body };
+      return tok;
+    });
+  }
+  return null;
 };
 
 // Defense technique swap (tier 7+). Anchor with slip_right yields variation
@@ -711,6 +762,7 @@ const STRATEGIES: Strategy[] = [
   swapFootworkFamilyAlt,
   swapFeintType,
   swapFeintTypeAlt,
+  swapSlipDirection,
   swapDefenseTechnique,
   insertSlipMid,
   insertPivotEnd,
