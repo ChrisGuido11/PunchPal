@@ -63,6 +63,31 @@ const FEINT_MOVES = new Set<string>([
 
 const REAR_HAND = new Set([2, 4, 6]);
 
+// Biomechanical helper. Orthodox stance assumed (lead = left side, rear =
+// right side). Punches 1/3/5 are lead-hand; 2/4/6 are rear-hand.
+// Used to enforce the slip/roll → punch-hand rule (slip_right loads the rear
+// hip → next punch must be rear-hand; slip_left → lead-hand). Same for rolls.
+function punchHand(p: Punch): "lead" | "rear" {
+  return p.n % 2 === 1 ? "lead" : "rear";
+}
+
+// Map a defense/footwork token to its variety family for `generateVariations`'s
+// preservation check. ALL footwork tokens collapse to a single "footwork"
+// family so a variation can swap pivot_left for step_in or shuffle_right and
+// still count as "preserving" the anchor's footwork move. Defenses stay
+// exact because the slip/roll biomechanical rule pairs them with specific
+// punch hands — swapping direction would break form. Feints stay exact too.
+function moveFamily(move: string): string {
+  if (
+    move.startsWith("pivot_") ||
+    move.startsWith("step_") ||
+    move.startsWith("shuffle_")
+  ) {
+    return "footwork";
+  }
+  return move;
+}
+
 const NUMBER_WORDS: Record<number, string> = {
   1: "one",
   2: "two",
@@ -421,25 +446,36 @@ const insertSlipMid: Strategy = (tokens, tier) => {
     }
   }
   if (absIdx < 0) return null;
-  // Don't insert before an existing non-punch (would violate consecutive rule).
-  if (
-    absIdx + 1 < tokens.length &&
-    tokens[absIdx + 1].kind !== "punch"
-  ) {
-    return null;
-  }
-  const slip: Defense = { kind: "defense", move: "slip_right" };
+  // The slip needs a punch on the very next index so the biomechanical rule
+  // can pick its direction. If the next token is non-punch (or absent), skip
+  // this strategy — the consecutive-non-punch rule would reject it anyway.
+  const next = tokens[absIdx + 1];
+  if (!next || next.kind !== "punch") return null;
+  // Slip direction is dictated by the punch that follows. slip_right loads
+  // the rear hip → must be followed by a rear-hand punch (2, 4, 6).
+  // slip_left loads the lead hip → must be followed by a lead-hand punch (1, 3, 5).
+  const direction = punchHand(next) === "rear" ? "slip_right" : "slip_left";
+  const slip: Defense = { kind: "defense", move: direction };
   return [...tokens.slice(0, absIdx + 1), slip, ...tokens.slice(absIdx + 1)];
 };
+
+const FOOTWORK_POOL: FootworkMove[] = [
+  "pivot_left",
+  "pivot_right",
+  "step_in",
+  "step_back",
+  "shuffle_left",
+  "shuffle_right",
+];
 
 const insertPivotEnd: Strategy = (tokens, tier) => {
   if (tier === undefined || tier < 4) return null;
   const punches = punchOnly(tokens);
   if (punches.length < 2) return null;
-  if (tokens.some((t) => t.kind === "footwork" && t.move.startsWith("pivot_"))) {
-    return null;
-  }
-  // Insert pivot before the last punch.
+  // Already has any footwork? Skip — variety here would conflict with
+  // anchor preservation (which family-matches footwork in generateVariations).
+  if (tokens.some((t) => t.kind === "footwork")) return null;
+  // Insert footwork before the last punch.
   let lastPunchIdx = -1;
   for (let i = tokens.length - 1; i >= 0; i--) {
     if (tokens[i].kind === "punch") {
@@ -449,10 +485,15 @@ const insertPivotEnd: Strategy = (tokens, tier) => {
   }
   if (lastPunchIdx <= 0) return null;
   if (tokens[lastPunchIdx - 1].kind !== "punch") return null;
-  const pivot: Footwork = { kind: "footwork", move: "pivot_left" };
+  // Rotate the inserted footwork direction deterministically based on the
+  // anchor notation hash. Different anchors get different directions —
+  // breaks the "every round inserted pivot_left" pattern users hit at launch.
+  const seed = hashString(serialize(tokens));
+  const move = FOOTWORK_POOL[seed % FOOTWORK_POOL.length];
+  const fw: Footwork = { kind: "footwork", move };
   return [
     ...tokens.slice(0, lastPunchIdx),
-    pivot,
+    fw,
     ...tokens.slice(lastPunchIdx),
   ];
 };
@@ -478,9 +519,80 @@ const insertRollMid: Strategy = (tokens, tier) => {
   }
   if (absIdx < 0) return null;
   if (absIdx + 1 >= tokens.length) return null;
-  if (tokens[absIdx + 1].kind !== "punch") return null;
-  const roll: Defense = { kind: "defense", move: "roll_left" };
+  const next = tokens[absIdx + 1];
+  if (next.kind !== "punch") return null;
+  // Same biomechanical rule as slip: roll_right loads rear hip → next punch
+  // must be rear-hand; roll_left → lead-hand.
+  const direction = punchHand(next) === "rear" ? "roll_right" : "roll_left";
+  const roll: Defense = { kind: "defense", move: direction };
   return [...tokens.slice(0, absIdx + 1), roll, ...tokens.slice(absIdx + 1)];
+};
+
+// Footwork variety strategies (Sprint 1 — combo mechanics fixes).
+// When an anchor already has footwork, these produce variations with
+// different directions / families so within-round footwork doesn't repeat.
+
+const swapFootworkDirection: Strategy = (tokens, tier) => {
+  if (tier === undefined || tier < 4) return null;
+  const fwIdx = tokens.findIndex((t) => t.kind === "footwork");
+  if (fwIdx < 0) return null;
+  const current = (tokens[fwIdx] as Footwork).move;
+  // Swap within the same family (direction flip).
+  const swap: Record<FootworkMove, FootworkMove> = {
+    pivot_left: "pivot_right",
+    pivot_right: "pivot_left",
+    step_in: "step_back",
+    step_back: "step_in",
+    shuffle_left: "shuffle_right",
+    shuffle_right: "shuffle_left",
+  };
+  const swapped = swap[current];
+  if (!swapped) return null;
+  return tokens.map((t, i) =>
+    i === fwIdx ? { kind: "footwork" as const, move: swapped } : t
+  );
+};
+
+const swapFootworkFamily: Strategy = (tokens, tier) => {
+  if (tier === undefined || tier < 4) return null;
+  const fwIdx = tokens.findIndex((t) => t.kind === "footwork");
+  if (fwIdx < 0) return null;
+  const current = (tokens[fwIdx] as Footwork).move;
+  // Cycle to a different family (pivot → step → shuffle → pivot).
+  const familyCycle: Record<string, FootworkMove> = {
+    pivot_left: "step_in",
+    pivot_right: "step_back",
+    step_in: "shuffle_left",
+    step_back: "shuffle_right",
+    shuffle_left: "pivot_left",
+    shuffle_right: "pivot_right",
+  };
+  const next = familyCycle[current];
+  if (!next) return null;
+  return tokens.map((t, i) =>
+    i === fwIdx ? { kind: "footwork" as const, move: next } : t
+  );
+};
+
+const swapFootworkFamilyAlt: Strategy = (tokens, tier) => {
+  if (tier === undefined || tier < 4) return null;
+  const fwIdx = tokens.findIndex((t) => t.kind === "footwork");
+  if (fwIdx < 0) return null;
+  const current = (tokens[fwIdx] as Footwork).move;
+  // Alternate cycle so we get a 3rd distinct family variation.
+  const familyCycleAlt: Record<string, FootworkMove> = {
+    pivot_left: "shuffle_right",
+    pivot_right: "shuffle_left",
+    step_in: "pivot_right",
+    step_back: "pivot_left",
+    shuffle_left: "step_back",
+    shuffle_right: "step_in",
+  };
+  const next = familyCycleAlt[current];
+  if (!next) return null;
+  return tokens.map((t, i) =>
+    i === fwIdx ? { kind: "footwork" as const, move: next } : t
+  );
 };
 
 const STRATEGIES: Strategy[] = [
@@ -492,6 +604,14 @@ const STRATEGIES: Strategy[] = [
   appendLeadHook,
   appendLeadUppercut,
   bodifyIndexOne,
+  // Footwork direction/family swaps run BEFORE insertPivotEnd so anchors that
+  // already have footwork yield multiple direction variants before we'd
+  // bother inserting a new one. Within a single round (where variations
+  // preserve the anchor's footwork family), this is what gives the user
+  // pivot_left → pivot_right → step_in → shuffle_left across the 3 minutes.
+  swapFootworkDirection,
+  swapFootworkFamily,
+  swapFootworkFamilyAlt,
   insertSlipMid,
   insertPivotEnd,
   insertRollMid,
@@ -524,7 +644,6 @@ export function generateVariations(
 
   const budget = tierBudget(tier);
   const anchorEmbedded = anchorTokens.filter((t) => t.kind !== "punch");
-  const anchorEmbeddedKeys = new Set(anchorEmbedded.map(tokenToString));
 
   const anchorCanonical = serialize(anchorTokens);
   const seen = new Set<string>([anchorCanonical]);
@@ -549,14 +668,23 @@ export function generateVariations(
     // Variation must share at least one punch with the anchor.
     if (!sharesPunch(validated, anchorTokens)) continue;
 
-    // When the anchor has embedded moves, preserve at least one.
+    // When the anchor has embedded moves, preserve at least one — by family
+    // for footwork (pivot_left and pivot_right count as the same family) and
+    // by exact token for defenses/feints (defense direction is locked to the
+    // following punch's hand per the biomechanical rule, so a direction swap
+    // would break form). This loosened rule is what gives Dynamic mode its
+    // within-round footwork variety: variations of a "1-2-pivot_left-3"
+    // anchor can include "1-2-pivot_right-3" etc.
     if (anchorEmbedded.length > 0) {
-      const variationKeys = new Set(
-        validated.filter((t) => t.kind !== "punch").map(tokenToString)
+      const variationFamilies = new Set(
+        validated
+          .filter((t) => t.kind !== "punch")
+          .map((t) => moveFamily((t as Defense | Footwork | Feint).move))
       );
       let preserved = false;
-      for (const k of anchorEmbeddedKeys) {
-        if (variationKeys.has(k)) {
+      for (const a of anchorEmbedded) {
+        const fam = moveFamily((a as Defense | Footwork | Feint).move);
+        if (variationFamilies.has(fam)) {
           preserved = true;
           break;
         }

@@ -231,7 +231,7 @@ const levelGuidelines: Record<
     tempo:
       "Faster pace, fluid combinations. Start incorporating rhythm changes and feints.",
     examples:
-      "1-2-3-2 (Jab-Cross-Lead Hook-Cross), 1-2b-3 (Jab-Cross body-Lead Hook head), 1-6-3-2b (Jab-Rear Uppercut-Lead Hook-Cross body), 1-2-slip_right-3 (with embedded slip), feint_jab-2-3-2",
+      "1-2-4 (Jab-Cross-Rear Hook), 1-2-3-4 (Jab-Cross-Lead Hook-Rear Hook — the four-punch staple), 1-4-3-2 (Jab-Rear Hook-Lead Hook-Cross), 1-2-3-2 (Jab-Cross-Lead Hook-Cross), 1-2b-3 (Jab-Cross body-Lead Hook head), 1-6-3-2b (Jab-Rear Uppercut-Lead Hook-Cross body), 1-2-slip_right-4 (slip right into rear hook — slip loads rear hip), 2-slip_left-3 (slip left into lead hook — slip loads lead hip), 1-pivot_right-2-3, feint_jab-2-3-2",
   },
   advanced: {
     focus:
@@ -249,7 +249,7 @@ const levelGuidelines: Record<
     tempo:
       "Variable pace - explosive bursts, calculated pressure, rhythm breaks. Simulated fight scenarios.",
     examples:
-      "1-2-slip_right-3b-pivot_left-6 (full embedded), 1-feint_jab-2-3 (feint setup), 1-2-roll_right-3-shuffle_left-2 (Lomachenko shuffle), 1-slip_left-2-pivot_right-3b-roll_left-4",
+      "1-2-slip_right-4-pivot_right-6 (slip right loads rear → rear hook → pivot right exit), 1-2-slip_left-3-pivot_left-5 (slip left loads lead → lead hook → pivot left exit), 1-feint_jab-2-3-4 (feint setup, 4-punch finish with rear hook), 1-2-roll_right-4-shuffle_left-2 (Lomachenko angle, roll right → rear hook), 2-slip_left-3-roll_right-2 (mirror counter), 1-pivot_right-2-4-3 (open angle with pivot right, finish with rear hook + lead hook)",
   },
 };
 
@@ -513,6 +513,23 @@ CRITICAL RULES:
 7. VARIETY (CRITICAL): Within this single workout, every combo must teach a distinct concept. No two combos should share the same opening two punches. Never reuse a workout name that appears in the RECENT WORKOUT HISTORY block; invent a fresh title every time.
 8. REALISM (CRITICAL): You are a real boxing coach with 20+ years in the gym. Every combo MUST be (a) mechanically possible — weight transfers and hip rotation chain naturally; (b) used by actual fighters at this tier; (c) anchored in a teaching purpose that fits the tier.
 9. PROGRESSION (CRITICAL): The user is at the tier stated in the user message. Match that tier exactly. Tier 1 should feel notably simpler than Tier 3. Tier 5 should feel clearly more sophisticated than Tier 4.
+
+10. BIOMECHANICAL RULE — SLIP/ROLL DIRECTION (MANDATORY, server-validated). Orthodox stance assumed.
+   - After slip_right OR roll_right, the next punch MUST be a REAR-hand punch: 2, 4, or 6 (with or without "b" suffix). The right-side slip/roll loads the rear hip; the only natural follow-up is a rear-hand punch.
+   - After slip_left OR roll_left, the next punch MUST be a LEAD-hand punch: 1, 3, or 5 (with or without "b" suffix). The left-side slip/roll loads the lead hip.
+   - INVALID: "1-slip_right-3" (slip right loads rear, but 3 is a lead hook — breaks form).
+   - INVALID: "1-slip_left-2-3" (slip left loads lead, but 2 is a cross — breaks form).
+   - VALID: "1-slip_right-2-3" (rear cross fires off the loaded rear hip, then lead hook).
+   - VALID: "1-2-slip_left-3" (slip left loads lead, lead hook fires from the loaded lead hip).
+   The server will reject any round whose anchor violates this rule. Block_*/parry_*/pivot_*/step_*/shuffle_* are NOT subject to this rule.
+
+11. REAR HOOK (#4) PARITY (MANDATORY for intermediate / advanced). The rear hook is core boxing arsenal and has been historically underrepresented in generated workouts. At intermediate and advanced, at LEAST 30% of the anchor combos in the workout MUST contain a #4 (with or without "b"). Treat #4 with equal weight to #3 — don't default to the lead hook every time. Many of the canonical pro-fighter combos prominently feature the rear hook (1-2-4, 1-3-4, 1-4-3-2, 2-3-4, etc.).
+
+12. FOOTWORK VARIETY (workout-level, MANDATORY). When footwork tokens appear in anchors across the workout:
+   - Balance left/right directions. pivot_left and pivot_right should appear with roughly equal frequency. Same for shuffle_left/shuffle_right and step_in/step_back.
+   - No single footwork token (e.g. pivot_left) may appear in more than 2 anchor combos in the same workout.
+   - Mix the FAMILIES (pivot, step, shuffle) — don't make every round a pivot round. If 3+ rounds need embedded footwork, use at least 2 distinct families across them.
+   - This is what makes Dynamic mode feel improvisational rather than scripted.
 
 ROUND-ANCHOR PAIRING (MANDATORY): rounds.length MUST match the number of rounds you produce. Each round has ONE distinct anchor combo (the user drills that anchor for the full round in Classic, and the client generates variations from it in Dynamic). round_number starts at 1 and increments. The "duration" field is total minutes (integer) and should equal rounds.length * 3.`;
 }
@@ -847,6 +864,25 @@ function validateAndFixRound(
   const meta = comboMeta(tokens);
   if (meta.punch_count < punchRange.min || meta.punch_count > punchRange.max) {
     return null;
+  }
+
+  // Biomechanical rule: after slip_right or roll_right, the next token (if a
+  // punch) must be rear-hand (2/4/6); after slip_left or roll_left, lead-hand
+  // (1/3/5). The slip/roll direction loads the hip on that side — punching
+  // from the wrong side breaks form. We reject any round violating this,
+  // forcing the worst case down to the 422 → canned workout fallback rather
+  // than teaching the user broken form.
+  for (let i = 0; i < tokens.length - 1; i++) {
+    const t = tokens[i];
+    if (t.kind !== "defense") continue;
+    const isRight = t.move === "slip_right" || t.move === "roll_right";
+    const isLeft = t.move === "slip_left" || t.move === "roll_left";
+    if (!isRight && !isLeft) continue;
+    const next = tokens[i + 1];
+    if (next.kind !== "punch") continue;
+    const wantRear = isRight;
+    const isRear = next.n % 2 === 0; // 2,4,6 rear; 1,3,5 lead
+    if (wantRear !== isRear) return null;
   }
 
   // Canonicalize notation + expanded_speech server-side.

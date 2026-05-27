@@ -502,3 +502,139 @@ describe("generateVariations (tier)", () => {
     expect(generateVariations("slip_left", 5, 5)).toEqual([]);
   });
 });
+
+// === combo mechanics edge cases (Sprint 2026-05-27) ===
+
+const tokensOf = (notation: string) =>
+  notation.split("-").map((t) => t.trim().toLowerCase()).filter(Boolean);
+
+const punchAfter = (tokens: string[], moveToken: string): string | null => {
+  for (let i = 0; i < tokens.length - 1; i++) {
+    if (tokens[i] === moveToken) {
+      const next = tokens[i + 1];
+      if (/^[1-6]b?$/.test(next)) return next;
+    }
+  }
+  return null;
+};
+
+const handOf = (punch: string): "lead" | "rear" => {
+  const n = parseInt(punch[0], 10);
+  return n % 2 === 1 ? "lead" : "rear";
+};
+
+describe("biomechanical rule — slip direction matches next punch hand", () => {
+  test("slip_right is followed by a rear-hand punch in every variation", () => {
+    // Tier 5 anchor that ends with a rear-hand punch — insertSlipMid will fire
+    // and must pick slip_right (since punch after slip is rear-hand).
+    const variations = generateVariations("1-2", 8, 5);
+    for (const v of variations) {
+      const toks = tokensOf(v);
+      const next = punchAfter(toks, "slip_right");
+      if (next !== null) {
+        expect(handOf(next)).toBe("rear");
+      }
+    }
+  });
+
+  test("slip_left is followed by a lead-hand punch in every variation", () => {
+    // Anchor "2-1" — first punch is rear (2), next is lead (1). insertSlipMid
+    // would insert slip after the first punch, before punch 1 (lead) → slip_left.
+    const variations = generateVariations("2-1", 8, 5);
+    for (const v of variations) {
+      const toks = tokensOf(v);
+      const next = punchAfter(toks, "slip_left");
+      if (next !== null) {
+        expect(handOf(next)).toBe("lead");
+      }
+    }
+  });
+});
+
+describe("biomechanical rule — roll direction matches next punch hand", () => {
+  test("roll_right is followed by a rear-hand punch in advanced variations", () => {
+    const variations = generateVariations("1-2-3", 12, 8);
+    for (const v of variations) {
+      const toks = tokensOf(v);
+      const next = punchAfter(toks, "roll_right");
+      if (next !== null) {
+        expect(handOf(next)).toBe("rear");
+      }
+    }
+  });
+
+  test("roll_left is followed by a lead-hand punch in advanced variations", () => {
+    const variations = generateVariations("2-3-2", 12, 8);
+    for (const v of variations) {
+      const toks = tokensOf(v);
+      const next = punchAfter(toks, "roll_left");
+      if (next !== null) {
+        expect(handOf(next)).toBe("lead");
+      }
+    }
+  });
+});
+
+describe("footwork variety — within-round rotation", () => {
+  test("variations of an anchor with pivot_left yield at least 2 distinct pivot directions", () => {
+    // With the loosened preservation rule + swap strategies, variations of
+    // "1-2-pivot_left-3" should produce some "1-2-pivot_right-3" too.
+    const variations = generateVariations("1-2-pivot_left-3", 10, 5);
+    const directions = new Set<string>();
+    for (const v of variations) {
+      const toks = tokensOf(v);
+      for (const t of toks) {
+        if (t === "pivot_left" || t === "pivot_right") directions.add(t);
+      }
+    }
+    expect(directions.size).toBeGreaterThanOrEqual(2);
+  });
+
+  test("variations of an anchor with pivot also reach step or shuffle family", () => {
+    // swapFootworkFamily / swapFootworkFamilyAlt rotate the family so we
+    // should see step_in/back or shuffle_left/right alongside pivot variants.
+    const variations = generateVariations("1-2-pivot_left-3", 12, 5);
+    const families = new Set<string>();
+    for (const v of variations) {
+      const toks = tokensOf(v);
+      for (const t of toks) {
+        if (t.startsWith("pivot_")) families.add("pivot");
+        if (t.startsWith("step_")) families.add("step");
+        if (t.startsWith("shuffle_")) families.add("shuffle");
+      }
+    }
+    expect(families.size).toBeGreaterThanOrEqual(2);
+  });
+
+  test("insertPivotEnd rotates the inserted footwork direction across different anchors", () => {
+    // Two distinct anchors with no embedded footwork — the inserted footwork
+    // token should not be the same direction for both (hash-based rotation).
+    const a = generateVariations("1-2", 12, 5);
+    const b = generateVariations("1-2-3-4", 12, 5);
+    const collectFootwork = (vs: string[]) => {
+      const fw = new Set<string>();
+      for (const v of vs) {
+        for (const t of tokensOf(v)) {
+          if (
+            t.startsWith("pivot_") ||
+            t.startsWith("step_") ||
+            t.startsWith("shuffle_")
+          ) {
+            fw.add(t);
+          }
+        }
+      }
+      return fw;
+    };
+    const fwA = collectFootwork(a);
+    const fwB = collectFootwork(b);
+    // At least one should differ — full equality would mean every anchor
+    // produces the same footwork direction (the bug we're fixing).
+    expect(fwA.size > 0 || fwB.size > 0).toBe(true);
+    if (fwA.size === 1 && fwB.size === 1) {
+      const onlyA = [...fwA][0];
+      const onlyB = [...fwB][0];
+      expect(onlyA).not.toBe(onlyB);
+    }
+  });
+});
