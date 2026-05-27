@@ -71,12 +71,14 @@ function punchHand(p: Punch): "lead" | "rear" {
   return p.n % 2 === 1 ? "lead" : "rear";
 }
 
-// Map a defense/footwork token to its variety family for `generateVariations`'s
-// preservation check. ALL footwork tokens collapse to a single "footwork"
-// family so a variation can swap pivot_left for step_in or shuffle_right and
-// still count as "preserving" the anchor's footwork move. Defenses stay
-// exact because the slip/roll biomechanical rule pairs them with specific
-// punch hands — swapping direction would break form. Feints stay exact too.
+// Map a defense/footwork/feint token to its variety family for
+// `generateVariations`'s preservation check.
+// - All footwork tokens collapse to "footwork" (pivot/step/shuffle swap freely).
+// - All feints collapse to "feint" (feint_jab ↔ feint_cross etc.).
+// - slip_right and roll_right share "defense_rear" (both load the rear hip,
+//   so they swap freely without breaking the biomechanical rule); slip_left
+//   and roll_left share "defense_lead". Blocks and parries stay exact-token
+//   since their mechanics don't match a slip/roll swap.
 function moveFamily(move: string): string {
   if (
     move.startsWith("pivot_") ||
@@ -85,7 +87,24 @@ function moveFamily(move: string): string {
   ) {
     return "footwork";
   }
+  if (move.startsWith("feint_")) return "feint";
+  if (move === "slip_right" || move === "roll_right") return "defense_rear";
+  if (move === "slip_left" || move === "roll_left") return "defense_lead";
   return move;
+}
+
+// Biomechanical rule for feints: the feinted punch type must NOT be the punch
+// thrown immediately after. feint_high specifically draws the guard up so the
+// follow must be a body shot; feint_low draws it down so the follow must be a
+// head shot. Returns true if the pair violates the rule.
+function feintConflictsWith(feint: FeintMove, p: Punch): boolean {
+  if (feint === "feint_jab") return p.n === 1;
+  if (feint === "feint_cross") return p.n === 2;
+  if (feint === "feint_hook") return p.n === 3 || p.n === 4;
+  if (feint === "feint_uppercut") return p.n === 5 || p.n === 6;
+  if (feint === "feint_high") return p.body === false;
+  if (feint === "feint_low") return p.body === true;
+  return false;
 }
 
 const NUMBER_WORDS: Record<number, string> = {
@@ -595,6 +614,84 @@ const swapFootworkFamilyAlt: Strategy = (tokens, tier) => {
   );
 };
 
+// Feint variety strategies — same parrot-repeat fix we applied to footwork.
+// An anchor with feint_jab needs variations using feint_cross / feint_hook /
+// etc. so a 3-minute Dynamic round doesn't feel like one feint on loop.
+
+const FEINT_CYCLE: FeintMove[] = [
+  "feint_jab",
+  "feint_cross",
+  "feint_hook",
+  "feint_uppercut",
+  "feint_high",
+  "feint_low",
+];
+
+// Try to swap a feint to a different type, advancing through the cycle until
+// we find one that doesn't violate the biomechanical rule against the punch
+// that follows. `offset` lets two distinct strategies pick different swaps.
+function trySwapFeint(
+  tokens: Token[],
+  feintIdx: number,
+  offset: number
+): Token[] | null {
+  const current = (tokens[feintIdx] as Feint).move;
+  const currentPos = FEINT_CYCLE.indexOf(current);
+  if (currentPos < 0) return null;
+  const next = tokens[feintIdx + 1];
+  const punchAfter = next?.kind === "punch" ? (next as Punch) : null;
+  for (let step = 1; step <= FEINT_CYCLE.length; step++) {
+    const idx = (currentPos + offset + step) % FEINT_CYCLE.length;
+    const candidate = FEINT_CYCLE[idx];
+    if (candidate === current) continue;
+    if (punchAfter && feintConflictsWith(candidate, punchAfter)) continue;
+    return tokens.map((t, i) =>
+      i === feintIdx ? { kind: "feint" as const, move: candidate } : t
+    );
+  }
+  return null;
+}
+
+const swapFeintType: Strategy = (tokens, tier) => {
+  if (tier === undefined || tier < 4) return null;
+  const feintIdx = tokens.findIndex((t) => t.kind === "feint");
+  if (feintIdx < 0) return null;
+  return trySwapFeint(tokens, feintIdx, 0);
+};
+
+const swapFeintTypeAlt: Strategy = (tokens, tier) => {
+  if (tier === undefined || tier < 4) return null;
+  const feintIdx = tokens.findIndex((t) => t.kind === "feint");
+  if (feintIdx < 0) return null;
+  // Different starting offset so a second distinct variation comes out.
+  return trySwapFeint(tokens, feintIdx, 2);
+};
+
+// Defense technique swap (tier 7+). Anchor with slip_right yields variation
+// with roll_right — same hip load, same biomechanical pairing with the next
+// punch, just a different defense technique. Small variety win.
+const swapDefenseTechnique: Strategy = (tokens, tier) => {
+  if (tier === undefined || tier < 7) return null;
+  const idx = tokens.findIndex(
+    (t) =>
+      t.kind === "defense" &&
+      (t.move.startsWith("slip_") || t.move.startsWith("roll_"))
+  );
+  if (idx < 0) return null;
+  const current = (tokens[idx] as Defense).move;
+  const swap: Record<string, DefenseMove> = {
+    slip_left: "roll_left",
+    slip_right: "roll_right",
+    roll_left: "slip_left",
+    roll_right: "slip_right",
+  };
+  const next = swap[current];
+  if (!next) return null;
+  return tokens.map((t, i) =>
+    i === idx ? { kind: "defense" as const, move: next } : t
+  );
+};
+
 const STRATEGIES: Strategy[] = [
   dropLast,
   dropFirst,
@@ -612,6 +709,9 @@ const STRATEGIES: Strategy[] = [
   swapFootworkDirection,
   swapFootworkFamily,
   swapFootworkFamilyAlt,
+  swapFeintType,
+  swapFeintTypeAlt,
+  swapDefenseTechnique,
   insertSlipMid,
   insertPivotEnd,
   insertRollMid,

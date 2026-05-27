@@ -606,6 +606,61 @@ describe("footwork variety — within-round rotation", () => {
     expect(families.size).toBeGreaterThanOrEqual(2);
   });
 
+  test("variations of an anchor with feint_jab yield at least 3 distinct feint types", () => {
+    // The biomechanically-correct anchor "feint_jab-2-3" (jab fake, cross
+    // exploits raised guard, lead hook follow-up). Variations should rotate
+    // through feint_cross / feint_hook / feint_uppercut / feint_high /
+    // feint_low — the parrot-repeat fix from the user's bug report.
+    const variations = generateVariations("feint_jab-2-3", 12, 5);
+    const feints = new Set<string>();
+    for (const v of variations) {
+      for (const t of tokensOf(v)) {
+        if (t.startsWith("feint_")) feints.add(t);
+      }
+    }
+    expect(feints.size).toBeGreaterThanOrEqual(3);
+  });
+
+  test("no variation pairs a feint with its same-type punch (biomechanical rule)", () => {
+    const variations = generateVariations("feint_jab-2-3", 12, 5);
+    const conflicts: Array<{ feint: string; punch: string; v: string }> = [];
+    for (const v of variations) {
+      const toks = tokensOf(v);
+      for (let i = 0; i < toks.length - 1; i++) {
+        const t = toks[i];
+        const n = toks[i + 1];
+        if (!t.startsWith("feint_")) continue;
+        if (!/^[1-6]b?$/.test(n)) continue;
+        const num = parseInt(n[0], 10);
+        const body = n.endsWith("b");
+        if (t === "feint_jab" && num === 1)
+          conflicts.push({ feint: t, punch: n, v });
+        if (t === "feint_cross" && num === 2)
+          conflicts.push({ feint: t, punch: n, v });
+        if (t === "feint_hook" && (num === 3 || num === 4))
+          conflicts.push({ feint: t, punch: n, v });
+        if (t === "feint_uppercut" && (num === 5 || num === 6))
+          conflicts.push({ feint: t, punch: n, v });
+        if (t === "feint_high" && !body)
+          conflicts.push({ feint: t, punch: n, v });
+        if (t === "feint_low" && body)
+          conflicts.push({ feint: t, punch: n, v });
+      }
+    }
+    expect(conflicts).toEqual([]);
+  });
+
+  test("advanced anchor with slip_right also produces a roll_right variation", () => {
+    // swapDefenseTechnique fires at tier 7+. slip_right (rear-hip load) →
+    // roll_right (same hip load, different technique). Followed-punch stays
+    // the same so the biomechanical rule is preserved.
+    const variations = generateVariations("1-2-slip_right-4", 12, 8);
+    const hasRollRight = variations.some((v) =>
+      tokensOf(v).includes("roll_right")
+    );
+    expect(hasRollRight).toBe(true);
+  });
+
   test("insertPivotEnd rotates the inserted footwork direction across different anchors", () => {
     // Two distinct anchors with no embedded footwork — the inserted footwork
     // token should not be the same direction for both (hash-based rotation).
