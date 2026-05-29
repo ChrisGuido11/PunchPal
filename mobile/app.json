@@ -15,7 +15,7 @@
       "url": "https://u.expo.dev/61f19f38-1c99-48db-b8a7-d53d0238a8a5"
     },
     "splash": {
-      "image": "./icon.png",
+      "image": "./splash-icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#000000"
     },
@@ -34,9 +34,9 @@
     "android": {
       "edgeToEdgeEnabled": true,
       "package": "com.punchpal.app",
-      "versionCode": 1,
+      "versionCode": 6,
       "adaptiveIcon": {
-        "foregroundImage": "./icon.png",
+        "foregroundImage": "./adaptive-icon.png",
         "backgroundColor": "#000000"
       },
       "permissions": [
@@ -70,13 +70,13 @@
       [
         "expo-splash-screen",
         {
-          "image": "./icon.png",
-          "imageWidth": 280,
+          "image": "./splash-icon.png",
+          "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#000000",
           "dark": {
-            "image": "./icon.png",
-            "imageWidth": 280,
+            "image": "./splash-icon.png",
+            "imageWidth": 200,
             "backgroundColor": "#000000"
           }
         }

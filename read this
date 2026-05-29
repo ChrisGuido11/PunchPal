@@ -1,23 +1,11 @@
-All three Android AdMob assets are created. Here are the IDs:
+There are some edge cases that need to be fixed:
 
-- **ANDROID_APP_ID**: `ca-app-pub-8632074296834726~2040607495`
-- **ANDROID_BANNER_ID**: `ca-app-pub-8632074296834726/9712425409`
-- **ANDROID_INTERSTITIAL_ID**: `ca-app-pub-8632074296834726/6960927537`
+1. Intermediate and Advanced are missing the rear hook (punch #4). It has been missing from the beginning. It should be included the same way the lead hook (#3) is included.
 
-Format sanity check passes for all three (correct publisher prefix, tilde vs. slash separators, exactly 10 trailing digits each).
+2. The slip mechanics are wrong, and possibly some other defensive movements too, but I haven’t checked those yet.
 
-A few notes on what happened in the AdMob console:
+* After a slip right, the app called a lead hook (#3). Biomechanically that makes no sense because the body position after slipping right naturally loads the rear side. After a slip right, the next punch should be a rear-hand punch (#2 cross, #4 rear hook, #6 rear uppercut, etc.).
+* Same issue with slip left. It then called a cross (#2), but the body position after slipping left naturally loads the lead side. After a slip left, the next punch should be a lead-hand punch (#1 jab, #3 lead hook, #5 lead uppercut, etc.).
 
-The "Enable user metrics" prompt didn't appear during the Add App flow in this version of the UI — only Platform (Android), App listed on store (No), and App name were asked. User metrics defaults to enabled and can be toggled later under Linked services / app settings if you want to confirm it.
-
-For the banner ad unit I left all advanced settings at defaults (no frequency cap, default eCPM floor). For the interstitial, the format defaulted to both "Text, image, and rich media" + "Video" checked (matches your "Image, Text, Video" requirement), frequency capping was already Disabled, and I explicitly set eCPM floor to Disabled to match your "no eCPM floor" instruction (the default was "Google optimized — All prices", which isn't strictly "no floor").
-
-**What I can't do from here:** I don't have filesystem access in this browser session, so I can't perform the three code edits (`mobile/app.json`, `mobile/src/lib/ads.ts` x2), run `bun run typecheck`, or make the git commit. You'll need to apply those locally. The values to paste in:
-
-In `mobile/app.json`, replace `androidAppId` with `ca-app-pub-8632074296834726~2040607495` (leave `iosAppId` alone).
-
-In `mobile/src/lib/ads.ts`, replace the `android:` value in `REAL_BANNER_AD_UNIT_ID` with `ca-app-pub-8632074296834726/9712425409`, and the `android:` value in `REAL_INTERSTITIAL_AD_UNIT_ID` with `ca-app-pub-8632074296834726/6960927537`. Then verify `FORCE_TEST_ADS = false` near the top.
-
-Then `cd mobile && bun run typecheck` and commit with `feat: wire android admob app + ad unit ids`.
-
-On your last question — keeping this as `ANDROID_ADMOB_SETUP.md` in the repo (probably at the repo root or under `mobile/docs/`) is a good idea for future re-runs (e.g., adding a rewarded ad unit later, or onboarding a teammate). It's a self-contained runbook with exact field values, naming conventions, and verification steps — worth saving. Up to you whether to add it; I'd vote yes.
+3. One of the Intermediate rounds used “pivot left” repeatedly for almost the entire 3 minutes. The system should rotate between pivots and all other footwork options more evenly. Repetition is the worst enemy here — combos and movement need to feel varied and dynamic.
+: Version code 3 has already been used. Try another version code.
