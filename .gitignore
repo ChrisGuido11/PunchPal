@@ -1,0 +1,5 @@
+# EAS / mobile build artifacts — regenerable, never commit (huge binaries)
+*.aab
+*.apk
+*.ipa
+*.app
