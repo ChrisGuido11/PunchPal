@@ -7,6 +7,7 @@ import * as Updates from "expo-updates";
 import * as SplashScreen from "expo-splash-screen";
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import RootNavigator from "./src/navigation/RootNavigator";
+import { useAppOpenAd } from "./src/lib/ads";
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 SplashScreen.setOptions({ duration: 400, fade: true });
@@ -42,6 +43,10 @@ const openai_api_key = Constants.expoConfig.extra.apikey;
 */
 
 export default function App() {
+  // App Open ad (Android only) — shows on cold launch and on resume from
+  // background. Self-disables on iOS / Expo Go, so it is safe to call here.
+  useAppOpenAd();
+
   // Explicit OTA check on cold launch. Updates.isEnabled is false in Expo Go
   // and dev client, so this only fires on preview / production builds. Fetches
   // silently and reloads — user sees the new bundle on next cold open.
