@@ -1,11 +1,5 @@
-There are some edge cases that need to be fixed:
+Scratch pad — clear when done.
 
-1. Intermediate and Advanced are missing the rear hook (punch #4). It has been missing from the beginning. It should be included the same way the lead hook (#3) is included.
-
-2. The slip mechanics are wrong, and possibly some other defensive movements too, but I haven’t checked those yet.
-
-* After a slip right, the app called a lead hook (#3). Biomechanically that makes no sense because the body position after slipping right naturally loads the rear side. After a slip right, the next punch should be a rear-hand punch (#2 cross, #4 rear hook, #6 rear uppercut, etc.).
-* Same issue with slip left. It then called a cross (#2), but the body position after slipping left naturally loads the lead side. After a slip left, the next punch should be a lead-hand punch (#1 jab, #3 lead hook, #5 lead uppercut, etc.).
-
-3. One of the Intermediate rounds used “pivot left” repeatedly for almost the entire 3 minutes. The system should rotate between pivots and all other footwork options more evenly. Repetition is the worst enemy here — combos and movement need to feel varied and dynamic.
-: Version code 3 has already been used. Try another version code.
+(All previously-listed mechanics edge cases were fixed 2026-05-27 and verified on-device:
+rear hook #4 parity, slip/roll biomechanics, footwork variety. The "version code 3 already
+used" build error was resolved by bumping Android versionCode to 6. See PROGRESS.md.)
