@@ -224,6 +224,9 @@ function TimerScreen({ navigation }: Props) {
   const dynamicPrimaryHandleRef = useRef<NodeJS.Timeout | null>(null);
   const dynamicPrimaryTargetTimeRef = useRef<number | null>(null);
   const dynamicPrimaryFiredRef = useRef<boolean>(false);
+  // Guards the one-time intro→combo-loop handoff so the opener's onDone path
+  // and the wall-clock fallback can't both start the rotating-combo loop.
+  const dynamicLoopStartedRef = useRef<boolean>(false);
 
   const [coachVoiceId, setCoachVoiceId] = useState<string | undefined>(undefined);
 
@@ -409,11 +412,20 @@ function TimerScreen({ navigation }: Props) {
       const reminders = round.classicReminders;
       const offsets = distributeReminderOffsets(reminders.length);
 
-      // Anchor speech immediately (no delay) ONLY when fresh round start.
+      // Round opener. Round 1 gets the full "Repetitions" framing that
+      // establishes the format (one combo drilled the whole round); later
+      // rounds use a trimmed opener since the format is already set, but keep
+      // the precision-over-speed cue. The anchor combo is read aloud in both.
+      const opener =
+        round.roundNumber === 1
+          ? `Repetitions. Let's repeat this combo during the whole round. ${anchorSpeech}. Focus on precision first. Speed second.`
+          : `Next combo. ${anchorSpeech}. Precision first, speed second.`;
+
+      // Opener immediately (no delay) ONLY when fresh round start.
       if (fromReminderIdx === 0) {
         scheduleAt(0, () => {
           pulseCard();
-          speak(anchorSpeech);
+          speak(opener);
         });
         if (description) {
           scheduleAt(DESCRIPTION_OFFSET_MS, () => speak(description));
@@ -595,9 +607,48 @@ function TimerScreen({ navigation }: Props) {
         playBeep();
       });
 
-      // Kick off the gap-based loop at the desired index.
-      setDynamicNotation(combos[fromIdx]?.notation ?? null);
-      fireDynamicCombo(fromIdx);
+      // Round opener (Dynamic = pad work). Round 1 explains the rotating
+      // format; later rounds get a trimmed version. The rotating-combo loop
+      // only starts AFTER the opener finishes — otherwise the combo card and
+      // the gap-timer would advance while the intro is still speaking. We use
+      // the opener's onDone as the accurate "finished" signal, with a padded
+      // wall-clock fallback in case onDone never fires (estimateSpeechDuration
+      // clamps at 8s while real TTS runs longer, so the fallback pads heavily).
+      // Only fresh round starts (fromIdx === 0) play the opener; resume and
+      // foreground re-anchor call fireDynamicCombo directly and skip it.
+      if (fromIdx === 0) {
+        const opener =
+          round.roundNumber === 1
+            ? "Pad work. The combos rotate the whole round. React to each call and flow with it. Stay sharp, keep moving."
+            : "Next round. Combos keep rotating. React and flow.";
+        const platform = Platform.OS === "android" ? "android" : "ios";
+        const introMs = estimateSpeechDuration(opener, platform);
+        dynamicLoopStartedRef.current = false;
+        setDynamicNotation(combos[0]?.notation ?? null);
+
+        const startLoop = () => {
+          if (dynamicLoopStartedRef.current) return;
+          if (!isRunningRef.current || isPausedRef.current) return;
+          dynamicLoopStartedRef.current = true;
+          fireDynamicCombo(0);
+        };
+
+        scheduleAt(0, () =>
+          speak(opener, {
+            onDone: () => {
+              const handle = setTimeout(startLoop, DYNAMIC_GAP_MS);
+              scheduleTimeoutsRef.current.push(
+                handle as unknown as NodeJS.Timeout
+              );
+            },
+          })
+        );
+        // Fallback start if onDone never arrives.
+        scheduleAt(introMs * 2 + DYNAMIC_GAP_MS, startLoop);
+      } else {
+        setDynamicNotation(combos[fromIdx]?.notation ?? null);
+        fireDynamicCombo(fromIdx);
+      }
     },
     [
       boxingLevel,
@@ -668,6 +719,7 @@ function TimerScreen({ navigation }: Props) {
       lastBeepSecondRef.current = null;
       classicNextReminderIdxRef.current = 0;
       dynamicNextIdxRef.current = 0;
+      dynamicLoopStartedRef.current = false;
       pausedAccumMsRef.current = 0;
       pausedAtRef.current = null;
       roundStartedAtRef.current = Date.now();
